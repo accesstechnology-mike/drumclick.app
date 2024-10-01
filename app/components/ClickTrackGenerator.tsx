@@ -59,24 +59,28 @@ export default function ClickTrackGenerator() {
 
   const loadAudioFiles = useCallback(async () => {
     if (!audioContextRef.current) return;
-    
-    const numbers = ['1', '2', '3', '4', '5', '6', '7'];
-    const buffers: (AudioBuffer | null)[] = await Promise.all(numbers.map(async (num) => {
-      try {
-        const response = await fetch(`/audio/${num}.mp3`);
-        if (!response.ok) {
-          console.error(`Failed to fetch audio file ${num}.mp3`);
+
+    const numbers = ["1", "2", "3", "4", "5", "6", "7"];
+    const buffers: (AudioBuffer | null)[] = await Promise.all(
+      numbers.map(async (num) => {
+        try {
+          const response = await fetch(`/audio/${num}.mp3`);
+          if (!response.ok) {
+            console.error(`Failed to fetch audio file ${num}.mp3`);
+            return null;
+          }
+          const arrayBuffer = await response.arrayBuffer();
+          return await audioContextRef.current!.decodeAudioData(arrayBuffer);
+        } catch (error) {
+          console.error(`Error loading audio file ${num}.mp3:`, error);
           return null;
         }
-        const arrayBuffer = await response.arrayBuffer();
-        return await audioContextRef.current!.decodeAudioData(arrayBuffer);
-      } catch (error) {
-        console.error(`Error loading audio file ${num}.mp3:`, error);
-        return null;
-      }
-    }));
-    
-    audioBuffersRef.current = buffers.filter((buffer): buffer is AudioBuffer => buffer !== null);
+      })
+    );
+
+    audioBuffersRef.current = buffers.filter(
+      (buffer): buffer is AudioBuffer => buffer !== null
+    );
   }, []);
 
   const playVoice = useCallback((time: number, number: number) => {
@@ -86,8 +90,16 @@ export default function ClickTrackGenerator() {
     }
 
     const source = audioContextRef.current.createBufferSource();
+    const gainNode = audioContextRef.current.createGain();
+    
     source.buffer = audioBuffersRef.current[number];
-    source.connect(audioContextRef.current.destination);
+    
+    // Set the gain to 0.5 (50% volume)
+    gainNode.gain.setValueAtTime(0.5, time);
+    
+    source.connect(gainNode);
+    gainNode.connect(audioContextRef.current.destination);
+    
     source.start(time);
   }, []);
 
@@ -95,23 +107,28 @@ export default function ClickTrackGenerator() {
     if (!audioContextRef.current) return;
 
     const currentTime = audioContextRef.current.currentTime;
-    const [beatsPerMeasure, beatUnit] = timeSignatureRef.current.split("/").map(Number);
+    const [beatsPerMeasure, beatUnit] = timeSignatureRef.current
+      .split("/")
+      .map(Number);
     const isCompound = timeSignatureRef.current === "6/8 (Compound)";
 
     while (nextNoteTimeRef.current < currentTime + 0.1) {
       const beatInMeasure = currentBeatRef.current % beatsPerMeasure;
-      const isAccentedBeat = isCompound 
-        ? (beatInMeasure === 0 || beatInMeasure === 3) 
-        : (beatInMeasure === 0 && accentFirstBeatRef.current);
-      
+      const isAccentedBeat = isCompound
+        ? (beatInMeasure === 0 || beatInMeasure === 3) && accentFirstBeatRef.current
+        : beatInMeasure === 0 && accentFirstBeatRef.current;
+
       if (nextNoteTimeRef.current >= nextBeatTimeRef.current) {
-        const scheduleTime = Math.max(nextNoteTimeRef.current, currentTime + 0.1);
-        
+        const scheduleTime = Math.max(
+          nextNoteTimeRef.current,
+          currentTime + 0.1
+        );
+
         if (useClick) {
           const frequency = isAccentedBeat ? 1000 : 600;
           createClickSound(scheduleTime, frequency);
         }
-        
+
         if (useVoice && audioBuffersRef.current.length > 0) {
           if (isCompound) {
             if (beatInMeasure === 0) {
@@ -123,7 +140,7 @@ export default function ClickTrackGenerator() {
             playVoice(scheduleTime, beatInMeasure);
           }
         }
-        
+
         if (currentTime - lastUpdateTimeRef.current >= 1 / 60) {
           setActiveBeat(beatInMeasure);
           lastUpdateTimeRef.current = currentTime;
@@ -152,7 +169,7 @@ export default function ClickTrackGenerator() {
         (window as WindowWithWebkitAudioContext).webkitAudioContext)();
       loadAudioFiles();
       const currentTime = audioContextRef.current.currentTime;
-      
+
       // Schedule the first beat slightly in the future
       nextNoteTimeRef.current = currentTime + 0.1;
       nextBeatTimeRef.current = nextNoteTimeRef.current;
@@ -181,7 +198,8 @@ export default function ClickTrackGenerator() {
         const currentTime = audioContextRef.current!.currentTime;
         const timeSinceLastBeat = currentTime - nextBeatTimeRef.current;
         const newBeatDuration = 60.0 / tempo;
-        nextBeatTimeRef.current = currentTime + newBeatDuration - timeSinceLastBeat;
+        nextBeatTimeRef.current =
+          currentTime + newBeatDuration - timeSinceLastBeat;
       }
     }
   }, [tempo, timeSignature, accentFirstBeat, isPlaying]);
@@ -218,11 +236,11 @@ export default function ClickTrackGenerator() {
   };
 
   const handleTempoInputBlur = () => {
-    if (tempoInput === '' || parseInt(tempoInput, 10) < 40) {
-      setTempoInput('40');
+    if (tempoInput === "" || parseInt(tempoInput, 10) < 40) {
+      setTempoInput("40");
       setTempo(40);
     } else if (parseInt(tempoInput, 10) > 300) {
-      setTempoInput('300');
+      setTempoInput("300");
       setTempo(300);
     } else {
       setTempoInput(tempo.toString());
@@ -233,16 +251,23 @@ export default function ClickTrackGenerator() {
     setUseClick(value);
   }, []);
 
-  const toggleVoiceMode = useCallback((value: boolean) => {
-    setUseVoice(value);
-    if (value && audioBuffersRef.current.length === 0 && audioContextRef.current) {
-      loadAudioFiles().then(() => {
-        // Force a re-render to use the newly loaded audio buffers
-        setUseVoice(prev => !prev);
-        setUseVoice(value);
-      });
-    }
-  }, [loadAudioFiles]);
+  const toggleVoiceMode = useCallback(
+    (value: boolean) => {
+      setUseVoice(value);
+      if (
+        value &&
+        audioBuffersRef.current.length === 0 &&
+        audioContextRef.current
+      ) {
+        loadAudioFiles().then(() => {
+          // Force a re-render to use the newly loaded audio buffers
+          setUseVoice((prev) => !prev);
+          setUseVoice(value);
+        });
+      }
+    },
+    [loadAudioFiles]
+  );
 
   useEffect(() => {
     if (isPlaying) {
@@ -324,7 +349,7 @@ export default function ClickTrackGenerator() {
               checked={accentFirstBeat}
               onCheckedChange={setAccentFirstBeat}
             />
-            <Label htmlFor="accent-mode">Accent First Beat</Label>
+            <Label htmlFor="accent-mode">Accent</Label>
           </div>
 
           <div className="flex justify-center space-x-2 mb-4">
@@ -338,7 +363,9 @@ export default function ClickTrackGenerator() {
                 checked={useClick}
                 onCheckedChange={toggleClickMode}
               />
-              <Label htmlFor="click-mode" className="text-sm">Click</Label>
+              <Label htmlFor="click-mode" className="text-sm">
+                Click
+              </Label>
             </div>
             <div className="flex items-center space-x-2">
               <Switch
@@ -346,7 +373,9 @@ export default function ClickTrackGenerator() {
                 checked={useVoice}
                 onCheckedChange={toggleVoiceMode}
               />
-              <Label htmlFor="voice-mode" className="text-sm">Voice</Label>
+              <Label htmlFor="voice-mode" className="text-sm">
+                Voice
+              </Label>
             </div>
           </div>
 
