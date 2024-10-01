@@ -14,6 +14,7 @@ import { Play, Square } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 interface WindowWithWebkitAudioContext extends Window {
   webkitAudioContext?: typeof AudioContext;
@@ -38,6 +39,8 @@ export default function ClickTrackGenerator() {
   const [useClick, setUseClick] = useState(true);
   const [useVoice, setUseVoice] = useState(false);
   const audioBuffersRef = useRef<AudioBuffer[]>([]);
+  const [subdivision, setSubdivision] = useState<"1" | "1/2" | "1/3" | "1/4">("1");
+  const subdivisionRef = useRef(subdivision);
 
   const createClickSound = useCallback((time: number, frequency: number) => {
     if (!audioContextRef.current) return;
@@ -60,19 +63,19 @@ export default function ClickTrackGenerator() {
   const loadAudioFiles = useCallback(async () => {
     if (!audioContextRef.current) return;
 
-    const numbers = ["1", "2", "3", "4", "5", "6", "7"];
+    const samples = ["1", "2", "3", "4", "5", "6", "7", "eee", "and", "ah"];
     const buffers: (AudioBuffer | null)[] = await Promise.all(
-      numbers.map(async (num) => {
+      samples.map(async (sample) => {
         try {
-          const response = await fetch(`/audio/${num}.mp3`);
+          const response = await fetch(`/audio/${sample}.mp3`);
           if (!response.ok) {
-            console.error(`Failed to fetch audio file ${num}.mp3`);
+            console.error(`Failed to fetch audio file ${sample}.mp3`);
             return null;
           }
           const arrayBuffer = await response.arrayBuffer();
           return await audioContextRef.current!.decodeAudioData(arrayBuffer);
         } catch (error) {
-          console.error(`Error loading audio file ${num}.mp3:`, error);
+          console.error(`Error loading audio file ${sample}.mp3:`, error);
           return null;
         }
       })
@@ -103,26 +106,77 @@ export default function ClickTrackGenerator() {
     source.start(time);
   }, []);
 
-  const scheduleClick = useCallback(() => {
+  const createSubdivisionClick = useCallback((time: number, subBeat: number, subCount: number, isAccented: boolean) => {
+    if (!audioContextRef.current) return;
+
+    let frequency: number;
+    if (subBeat === 0) {
+      frequency = isAccented ? 1000 : 600; // Main beat
+    } else if (subCount === 2) {
+      frequency = 400; // Half note
+    } else if (subCount === 3) {
+      frequency = subBeat === 1 ? 500 : 400; // Triplet
+    } else if (subCount === 4) {
+      frequency = subBeat === 2 ? 500 : 400; // Quarter note
+    } else {
+      return; // No subdivision
+    }
+
+    const osc = audioContextRef.current.createOscillator();
+    const gainNode = audioContextRef.current.createGain();
+
+    osc.connect(gainNode);
+    gainNode.connect(audioContextRef.current.destination);
+
+    osc.frequency.setValueAtTime(frequency, time);
+    gainNode.gain.setValueAtTime(0, time);
+    gainNode.gain.linearRampToValueAtTime(0.3, time + 0.005);
+    gainNode.gain.exponentialRampToValueAtTime(0.00001, time + 0.1);
+
+    osc.start(time);
+    osc.stop(time + 0.1);
+  }, []);
+
+  const playSubdivision = useCallback((time: number, subBeat: number, subCount: number) => {
+    if (!audioContextRef.current) return;
+
+    let sampleIndex: number;
+    if (subCount === 2) {
+      sampleIndex = 8; // "and"
+    } else if (subCount === 3) {
+      sampleIndex = subBeat === 1 ? 7 : 9; // "eee" or "ah"
+    } else if (subCount === 4) {
+      sampleIndex = subBeat === 1 ? 7 : subBeat === 2 ? 8 : 9; // "eee", "and", or "ah"
+    } else {
+      return; // No subdivision
+    }
+
+    if (audioBuffersRef.current[sampleIndex]) {
+      const source = audioContextRef.current.createBufferSource();
+      const gainNode = audioContextRef.current.createGain();
+      
+      source.buffer = audioBuffersRef.current[sampleIndex];
+      gainNode.gain.setValueAtTime(0.5, time);
+      
+      source.connect(gainNode);
+      gainNode.connect(audioContextRef.current.destination);
+      
+      source.start(time);
+    }
+  }, []);
+
+  const scheduleCompound68 = useCallback(() => {
     if (!audioContextRef.current) return;
 
     const currentTime = audioContextRef.current.currentTime;
-    const [beatsPerMeasure, beatUnit] = timeSignatureRef.current
-      .split("/")
-      .map(Number);
-    const isCompound = timeSignatureRef.current === "6/8 (Compound)";
+    const beatsPerMeasure = 6;
 
     while (nextNoteTimeRef.current < currentTime + 0.1) {
       const beatInMeasure = currentBeatRef.current % beatsPerMeasure;
-      const isAccentedBeat = isCompound
-        ? (beatInMeasure === 0 || beatInMeasure === 3) && accentFirstBeatRef.current
-        : beatInMeasure === 0 && accentFirstBeatRef.current;
+      const isAccentedBeat = (beatInMeasure === 0 || beatInMeasure === 3) && accentFirstBeatRef.current;
 
       if (nextNoteTimeRef.current >= nextBeatTimeRef.current) {
-        const scheduleTime = Math.max(
-          nextNoteTimeRef.current,
-          currentTime + 0.1
-        );
+        const scheduleTime = Math.max(nextNoteTimeRef.current, currentTime + 0.1);
 
         if (useClick) {
           const frequency = isAccentedBeat ? 1000 : 600;
@@ -130,14 +184,16 @@ export default function ClickTrackGenerator() {
         }
 
         if (useVoice && audioBuffersRef.current.length > 0) {
-          if (isCompound) {
-            if (beatInMeasure === 0) {
-              playVoice(scheduleTime, 0); // Play "1"
-            } else if (beatInMeasure === 3) {
-              playVoice(scheduleTime, 1); // Play "2"
+          if (beatInMeasure === 0) {
+            playVoice(scheduleTime, 0); // Play "1"
+          } else if (beatInMeasure === 3) {
+            playVoice(scheduleTime, 1); // Play "2"
+          } else if (subdivisionRef.current === "1/3") {
+            if (beatInMeasure === 1 || beatInMeasure === 4) {
+              playSubdivision(scheduleTime, 1, 3); // "ee"
+            } else if (beatInMeasure === 2 || beatInMeasure === 5) {
+              playSubdivision(scheduleTime, 2, 3); // "ah"
             }
-          } else {
-            playVoice(scheduleTime, beatInMeasure);
           }
         }
 
@@ -152,8 +208,61 @@ export default function ClickTrackGenerator() {
 
       nextNoteTimeRef.current += 60.0 / tempoRef.current;
     }
+    schedulerIdRef.current = requestAnimationFrame(scheduleCompound68);
+  }, [createClickSound, playVoice, playSubdivision, useClick, useVoice]);
+
+  const scheduleClick = useCallback(() => {
+    if (!audioContextRef.current) return;
+
+    const currentTime = audioContextRef.current.currentTime;
+    const [beatsPerMeasure, beatUnit] = timeSignatureRef.current.split("/").map(Number);
+
+    const subCount = subdivisionRef.current === "1" ? 1 : 
+                     subdivisionRef.current === "1/2" ? 2 : 
+                     subdivisionRef.current === "1/3" ? 3 : 4;
+
+    while (nextNoteTimeRef.current < currentTime + 0.1) {
+      const beatInMeasure = Math.floor(currentBeatRef.current / subCount) % beatsPerMeasure;
+      const subBeat = currentBeatRef.current % subCount;
+      const isAccentedBeat = beatInMeasure === 0 && accentFirstBeatRef.current;
+
+      if (nextNoteTimeRef.current >= nextBeatTimeRef.current) {
+        const scheduleTime = Math.max(nextNoteTimeRef.current, currentTime + 0.1);
+
+        if (useClick) {
+          if (subBeat === 0) {
+            const frequency = isAccentedBeat ? 1000 : 600;
+            createClickSound(scheduleTime, frequency);
+          } else {
+            createSubdivisionClick(scheduleTime, subBeat, subCount, isAccentedBeat);
+          }
+        }
+
+        if (useVoice && audioBuffersRef.current.length > 0) {
+          if (subBeat === 0) {
+            playVoice(scheduleTime, beatInMeasure);
+          } else {
+            playSubdivision(scheduleTime, subBeat, subCount);
+          }
+        }
+
+        if (subBeat === 0) {
+          if (currentTime - lastUpdateTimeRef.current >= 1 / 60) {
+            setActiveBeat(beatInMeasure);
+            lastUpdateTimeRef.current = currentTime;
+          }
+        }
+
+        currentBeatRef.current++;
+        if (subBeat === subCount - 1) {
+          nextBeatTimeRef.current += 60.0 / tempoRef.current;
+        }
+      }
+
+      nextNoteTimeRef.current += (60.0 / tempoRef.current) / subCount;
+    }
     schedulerIdRef.current = requestAnimationFrame(scheduleClick);
-  }, [createClickSound, playVoice, useClick, useVoice]);
+  }, [createClickSound, createSubdivisionClick, playVoice, playSubdivision, useClick, useVoice]);
 
   const startStop = () => {
     if (isPlaying) {
@@ -176,7 +285,11 @@ export default function ClickTrackGenerator() {
       lastUpdateTimeRef.current = currentTime;
       currentBeatRef.current = 0;
       setActiveBeat(0); // Change this line from -1 to 0
-      scheduleClick();
+      if (timeSignature === "6/8 (Compound)") {
+        scheduleCompound68();
+      } else {
+        scheduleClick();
+      }
       setIsPlaying(true);
     }
   };
@@ -185,24 +298,34 @@ export default function ClickTrackGenerator() {
     tempoRef.current = tempo;
     timeSignatureRef.current = timeSignature;
     accentFirstBeatRef.current = accentFirstBeat;
-    setTempoInput(tempo.toString()); // Update tempoInput when tempo changes
+    setTempoInput(tempo.toString());
 
     if (isPlaying) {
       // Reset the current beat when time signature changes
-      if (timeSignatureRef.current !== timeSignature) {
-        currentBeatRef.current = 0;
-        setActiveBeat(0);
+      currentBeatRef.current = 0;
+      setActiveBeat(0);
+      
+      // Cancel the existing scheduler
+      if (schedulerIdRef.current) {
+        cancelAnimationFrame(schedulerIdRef.current);
       }
+      
+      // Start the appropriate scheduler based on the new time signature
+      if (timeSignature === "6/8 (Compound)") {
+        scheduleCompound68();
+      } else {
+        scheduleClick();
+      }
+      
       // Adjust nextBeatTimeRef when tempo changes
       if (tempoRef.current !== tempo) {
         const currentTime = audioContextRef.current!.currentTime;
         const timeSinceLastBeat = currentTime - nextBeatTimeRef.current;
         const newBeatDuration = 60.0 / tempo;
-        nextBeatTimeRef.current =
-          currentTime + newBeatDuration - timeSinceLastBeat;
+        nextBeatTimeRef.current = currentTime + newBeatDuration - timeSinceLastBeat;
       }
     }
-  }, [tempo, timeSignature, accentFirstBeat, isPlaying]);
+  }, [tempo, timeSignature, accentFirstBeat, isPlaying, scheduleClick, scheduleCompound68]);
 
   useEffect(() => {
     return () => {
@@ -276,9 +399,30 @@ export default function ClickTrackGenerator() {
         cancelAnimationFrame(schedulerIdRef.current);
       }
       // Restart the scheduler with the new settings
-      scheduleClick();
+      if (timeSignature === "6/8 (Compound)") {
+        scheduleCompound68();
+      } else {
+        scheduleClick();
+      }
     }
-  }, [useClick, useVoice, isPlaying, scheduleClick]);
+  }, [useClick, useVoice, isPlaying, scheduleClick, scheduleCompound68]);
+
+  useEffect(() => {
+    subdivisionRef.current = subdivision;
+  }, [subdivision]);
+
+  // Add this useEffect near your other useEffect hooks
+  useEffect(() => {
+    if (timeSignature === "6/8 (Compound)") {
+      if (subdivision === "1/2" || subdivision === "1/4") {
+        setSubdivision("1/3");
+      }
+    } else if (timeSignature === "6/8") {
+      if (subdivision === "1/3") {
+        setSubdivision("1/2");
+      }
+    }
+  }, [timeSignature, subdivision]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
@@ -377,6 +521,44 @@ export default function ClickTrackGenerator() {
                 Voice
               </Label>
             </div>
+          </div>
+
+          <div className="mb-4">
+            <Label htmlFor="subdivision" className="block text-sm font-medium text-gray-700 mb-1">
+              Subdivision
+            </Label>
+            <RadioGroup
+              id="subdivision"
+              value={subdivision}
+              onValueChange={(value) => setSubdivision(value as "1" | "1/2" | "1/3" | "1/4")}
+              className="flex space-x-2"
+              disabled={!useClick && !useVoice}
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="1" id="r1" />
+                <Label htmlFor="r1">1</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem 
+                  value="1/2" 
+                  id="r2" 
+                  disabled={timeSignature === "6/8 (Compound)"}
+                />
+                <Label htmlFor="r2" className={timeSignature === "6/8 (Compound)" ? "text-gray-400" : ""}>1/2</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="1/3" id="r3" />
+                <Label htmlFor="r3">1/3</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem 
+                  value="1/4" 
+                  id="r4" 
+                  disabled={timeSignature === "6/8 (Compound)"}
+                />
+                <Label htmlFor="r4" className={timeSignature === "6/8 (Compound)" ? "text-gray-400" : ""}>1/4</Label>
+              </div>
+            </RadioGroup>
           </div>
 
           <Button
