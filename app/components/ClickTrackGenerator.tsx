@@ -35,6 +35,9 @@ export default function ClickTrackGenerator() {
   const lastUpdateTimeRef = useRef(0);
   const accentFirstBeatRef = useRef(accentFirstBeat);
   const [tempoInput, setTempoInput] = useState(tempo.toString());
+  const [useClick, setUseClick] = useState(true);
+  const [useVoice, setUseVoice] = useState(false);
+  const audioBuffersRef = useRef<AudioBuffer[]>([]);
 
   const createClickSound = useCallback((time: number, frequency: number) => {
     if (!audioContextRef.current) return;
@@ -54,8 +57,44 @@ export default function ClickTrackGenerator() {
     osc.stop(time + 0.1);
   }, []);
 
+  const loadAudioFiles = useCallback(async () => {
+    if (!audioContextRef.current) return;
+    
+    const numbers = ['1', '2', '3', '4', '5', '6', '7'];
+    const buffers: (AudioBuffer | null)[] = await Promise.all(numbers.map(async (num) => {
+      try {
+        const response = await fetch(`/audio/${num}.mp3`);
+        if (!response.ok) {
+          console.error(`Failed to fetch audio file ${num}.mp3`);
+          return null;
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        return await audioContextRef.current!.decodeAudioData(arrayBuffer);
+      } catch (error) {
+        console.error(`Error loading audio file ${num}.mp3:`, error);
+        return null;
+      }
+    }));
+    
+    audioBuffersRef.current = buffers.filter((buffer): buffer is AudioBuffer => buffer !== null);
+  }, []);
+
+  const playVoice = useCallback((time: number, number: number) => {
+    if (!audioContextRef.current || !audioBuffersRef.current[number]) {
+      console.warn(`Audio buffer not available for number ${number + 1}`);
+      return;
+    }
+
+    const source = audioContextRef.current.createBufferSource();
+    source.buffer = audioBuffersRef.current[number];
+    source.connect(audioContextRef.current.destination);
+    source.start(time);
+  }, []);
+
   const scheduleClick = useCallback(() => {
-    const currentTime = audioContextRef.current!.currentTime;
+    if (!audioContextRef.current) return;
+
+    const currentTime = audioContextRef.current.currentTime;
     const beatsPerMeasure = parseInt(timeSignatureRef.current.split("/")[0]);
 
     while (nextNoteTimeRef.current < currentTime + 0.1) {
@@ -63,8 +102,15 @@ export default function ClickTrackGenerator() {
       
       if (nextNoteTimeRef.current >= nextBeatTimeRef.current) {
         const scheduleTime = Math.max(nextNoteTimeRef.current, currentTime + 0.1);
-        const frequency = (isFirstBeat && accentFirstBeatRef.current) ? 1000 : 600;
-        createClickSound(scheduleTime, frequency);
+        
+        if (useClick) {
+          const frequency = (isFirstBeat && accentFirstBeatRef.current) ? 1000 : 600;
+          createClickSound(scheduleTime, frequency);
+        }
+        
+        if (useVoice && audioBuffersRef.current.length > 0) {
+          playVoice(scheduleTime, currentBeatRef.current % beatsPerMeasure);
+        }
         
         if (currentTime - lastUpdateTimeRef.current >= 1 / 60) {
           setActiveBeat(currentBeatRef.current % beatsPerMeasure);
@@ -78,7 +124,7 @@ export default function ClickTrackGenerator() {
       nextNoteTimeRef.current += 60.0 / tempoRef.current;
     }
     schedulerIdRef.current = requestAnimationFrame(scheduleClick);
-  }, [createClickSound]);
+  }, [createClickSound, playVoice, useClick, useVoice]);
 
   const startStop = () => {
     if (isPlaying) {
@@ -92,6 +138,7 @@ export default function ClickTrackGenerator() {
     } else {
       audioContextRef.current = new (window.AudioContext ||
         (window as WindowWithWebkitAudioContext).webkitAudioContext)();
+      loadAudioFiles();
       const currentTime = audioContextRef.current.currentTime;
       
       // Schedule the first beat slightly in the future
@@ -170,6 +217,32 @@ export default function ClickTrackGenerator() {
     }
   };
 
+  const toggleClickMode = useCallback((value: boolean) => {
+    setUseClick(value);
+  }, []);
+
+  const toggleVoiceMode = useCallback((value: boolean) => {
+    setUseVoice(value);
+    if (value && audioBuffersRef.current.length === 0 && audioContextRef.current) {
+      loadAudioFiles().then(() => {
+        // Force a re-render to use the newly loaded audio buffers
+        setUseVoice(prev => !prev);
+        setUseVoice(value);
+      });
+    }
+  }, [loadAudioFiles]);
+
+  useEffect(() => {
+    if (isPlaying) {
+      // Cancel the existing scheduler
+      if (schedulerIdRef.current) {
+        cancelAnimationFrame(schedulerIdRef.current);
+      }
+      // Restart the scheduler with the new settings
+      scheduleClick();
+    }
+  }, [useClick, useVoice, isPlaying, scheduleClick]);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
       <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-md">
@@ -243,6 +316,25 @@ export default function ClickTrackGenerator() {
 
           <div className="flex justify-center space-x-2 mb-4">
             {renderLights()}
+          </div>
+
+          <div className="flex justify-between space-x-2 mb-4">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="click-mode"
+                checked={useClick}
+                onCheckedChange={toggleClickMode}
+              />
+              <Label htmlFor="click-mode" className="text-sm">Click</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="voice-mode"
+                checked={useVoice}
+                onCheckedChange={toggleVoiceMode}
+              />
+              <Label htmlFor="voice-mode" className="text-sm">Voice</Label>
+            </div>
           </div>
 
           <Button
