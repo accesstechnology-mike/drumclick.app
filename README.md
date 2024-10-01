@@ -1,6 +1,6 @@
 # 🎵 Click Track Generator
 
-A sleek, modern web application for musicians and music enthusiasts to create customizable click tracks with ease.
+A sleek, modern web application for musicians and music enthusiasts to create customisable click tracks with ease.
 
 ## 🌟 Features
 
@@ -22,7 +22,7 @@ A sleek, modern web application for musicians and music enthusiasts to create cu
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/click-track-generator.git
+   git clone https://github.com/accesstechnology-mike/click-track-generator.git
    ```
 
 2. Navigate to the project directory:
@@ -79,9 +79,9 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ## 📞 Contact
 
-Your Name - [@yourtwitter](https://twitter.com/yourtwitter) - email@example.com
+Your Name - [@mikethrussell](https://twitter.com/mikethrussell) - mike@accesstechnology.co.uk
 
-Project Link: [https://github.com/yourusername/click-track-generator](https://github.com/yourusername/click-track-generator)
+Project Link: [https://github.com/accesstechnology-mike/click-track-generator](https://github.com/accesstechnology-mike/click-track-generator)
 
 ## 🙏 Acknowledgments
 
@@ -92,4 +92,4 @@ Project Link: [https://github.com/yourusername/click-track-generator](https://gi
 
 ---
 
-Made with ❤️ by [Your Name]
+Made with ❤️ by [Mike Thrussell](https://github.com/accesstechnology-mike)
