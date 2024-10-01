@@ -15,6 +15,10 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 
+interface WindowWithWebkitAudioContext extends Window {
+  webkitAudioContext?: typeof AudioContext;
+}
+
 export default function ClickTrackGenerator() {
   const [timeSignature, setTimeSignature] = useState("4/4");
   const [tempo, setTempo] = useState(120);
@@ -87,7 +91,7 @@ export default function ClickTrackGenerator() {
       }
     } else {
       audioContextRef.current = new (window.AudioContext ||
-        (window as any).webkitAudioContext)();
+        (window as WindowWithWebkitAudioContext).webkitAudioContext)();
       const currentTime = audioContextRef.current.currentTime;
       
       // Schedule the first beat slightly in the future
