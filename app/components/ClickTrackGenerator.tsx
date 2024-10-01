@@ -10,11 +10,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Play, Square } from "lucide-react";
+import { Play, Square, Music, Volume2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface WindowWithWebkitAudioContext extends Window {
   webkitAudioContext?: typeof AudioContext;
@@ -425,145 +427,152 @@ export default function ClickTrackGenerator() {
   }, [timeSignature, subdivision]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
-      <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-md">
-        <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">
-          Click Track Generator
-        </h1>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle className="text-3xl font-bold text-center">Click Track Generator</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <Tabs defaultValue="settings" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="settings">Settings</TabsTrigger>
+              <TabsTrigger value="advanced">Advanced</TabsTrigger>
+            </TabsList>
+            <TabsContent value="settings" className="space-y-4">
+              <div>
+                <Label htmlFor="timeSignature" className="text-sm font-medium">
+                  Time Signature
+                </Label>
+                <Select value={timeSignature} onValueChange={setTimeSignature}>
+                  <SelectTrigger id="timeSignature">
+                    <SelectValue placeholder="Select time signature" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2/4">2/4</SelectItem>
+                    <SelectItem value="3/4">3/4</SelectItem>
+                    <SelectItem value="4/4">4/4</SelectItem>
+                    <SelectItem value="5/4">5/4</SelectItem>
+                    <SelectItem value="6/8">6/8</SelectItem>
+                    <SelectItem value="6/8 (Compound)">6/8 (Compound)</SelectItem>
+                    <SelectItem value="7/8">7/8</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="tempo" className="text-sm font-medium">
+                  Tempo (BPM)
+                </Label>
+                <div className="flex items-center space-x-2">
+                  <Slider
+                    id="tempo"
+                    min={40}
+                    max={300}
+                    step={1}
+                    value={[tempo]}
+                    onValueChange={(value) => {
+                      setTempo(value[0])
+                      setTempoInput(value[0].toString())
+                    }}
+                    className="flex-grow"
+                  />
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={tempoInput}
+                    onChange={handleTempoInputChange}
+                    onBlur={handleTempoInputBlur}
+                    className="w-20"
+                  />
+                </div>
+              </div>
+            </TabsContent>
+            <TabsContent value="advanced" className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="accent-mode" className="text-sm font-medium">Accent First Beat</Label>
+                <Switch
+                  id="accent-mode"
+                  checked={accentFirstBeat}
+                  onCheckedChange={setAccentFirstBeat}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="subdivision" className="text-sm font-medium">
+                  Subdivision
+                </Label>
+                <RadioGroup
+                  id="subdivision"
+                  value={subdivision}
+                  onValueChange={(value) => setSubdivision(value as "1" | "1/2" | "1/3" | "1/4")}
+                  className="flex space-x-2"
+                  disabled={!useClick && !useVoice}
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="1" id="r1" />
+                    <Label htmlFor="r1">1</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem 
+                      value="1/2" 
+                      id="r2" 
+                      disabled={timeSignature === "6/8 (Compound)"}
+                    />
+                    <Label htmlFor="r2" className={timeSignature === "6/8 (Compound)" ? "text-gray-400" : ""}>1/2</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="1/3" id="r3" />
+                    <Label htmlFor="r3">1/3</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem 
+                      value="1/4" 
+                      id="r4" 
+                      disabled={timeSignature === "6/8 (Compound)"}
+                    />
+                    <Label htmlFor="r4" className={timeSignature === "6/8 (Compound)" ? "text-gray-400" : ""}>1/4</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+            </TabsContent>
+          </Tabs>
 
-        <div className="space-y-6">
-          <div>
-            <label
-              htmlFor="timeSignature"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
-              Time Signature
-            </label>
-            <Select value={timeSignature} onValueChange={setTimeSignature}>
-              <SelectTrigger id="timeSignature">
-                <SelectValue placeholder="Select time signature" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="2/4">2/4</SelectItem>
-                <SelectItem value="3/4">3/4</SelectItem>
-                <SelectItem value="4/4">4/4</SelectItem>
-                <SelectItem value="5/4">5/4</SelectItem>
-                <SelectItem value="6/8">6/8</SelectItem>
-                <SelectItem value="6/8 (Compound)">6/8 (Compound)</SelectItem>
-                <SelectItem value="7/8">7/8</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <label
-              htmlFor="tempo"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
-              Tempo (BPM)
-            </label>
-            <div className="flex items-center space-x-2">
-              <Slider
-                id="tempo"
-                min={40}
-                max={300}
-                step={1}
-                value={[tempo]}
-                onValueChange={(value) => {
-                  setTempo(value[0]);
-                  setTempoInput(value[0].toString()); // Update tempoInput when slider changes
-                }}
-                className="w-full"
-              />
-              <Input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={tempoInput}
-                onChange={handleTempoInputChange}
-                onBlur={handleTempoInputBlur}
-                className="w-20"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="accent-mode"
-              checked={accentFirstBeat}
-              onCheckedChange={setAccentFirstBeat}
-            />
-            <Label htmlFor="accent-mode">Accent</Label>
-          </div>
-
-          <div className="flex justify-center space-x-2 mb-4">
+          <div className="flex justify-center space-x-2 py-4">
             {renderLights()}
           </div>
 
-          <div className="flex justify-between space-x-2 mb-4">
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="click-mode"
-                checked={useClick}
-                onCheckedChange={toggleClickMode}
-              />
-              <Label htmlFor="click-mode" className="text-sm">
-                Click
-              </Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="voice-mode"
-                checked={useVoice}
-                onCheckedChange={toggleVoiceMode}
-              />
-              <Label htmlFor="voice-mode" className="text-sm">
-                Voice
-              </Label>
-            </div>
-          </div>
-
-          <div className="mb-4">
-            <Label htmlFor="subdivision" className="block text-sm font-medium text-gray-700 mb-1">
-              Subdivision
-            </Label>
-            <RadioGroup
-              id="subdivision"
-              value={subdivision}
-              onValueChange={(value) => setSubdivision(value as "1" | "1/2" | "1/3" | "1/4")}
-              className="flex space-x-2"
-              disabled={!useClick && !useVoice}
+          <div className="flex justify-between space-x-4">
+            <Button
+              variant="outline"
+              size="sm"
+              className={`flex-1 ${
+                useClick
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                  : 'hover:bg-secondary'
+              }`}
+              onClick={() => toggleClickMode(!useClick)}
             >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="1" id="r1" />
-                <Label htmlFor="r1">1</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem 
-                  value="1/2" 
-                  id="r2" 
-                  disabled={timeSignature === "6/8 (Compound)"}
-                />
-                <Label htmlFor="r2" className={timeSignature === "6/8 (Compound)" ? "text-gray-400" : ""}>1/2</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="1/3" id="r3" />
-                <Label htmlFor="r3">1/3</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem 
-                  value="1/4" 
-                  id="r4" 
-                  disabled={timeSignature === "6/8 (Compound)"}
-                />
-                <Label htmlFor="r4" className={timeSignature === "6/8 (Compound)" ? "text-gray-400" : ""}>1/4</Label>
-              </div>
-            </RadioGroup>
+              <Music className="mr-2 h-4 w-4" />
+              Click
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className={`flex-1 ${
+                useVoice
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                  : 'hover:bg-secondary'
+              }`}
+              onClick={() => toggleVoiceMode(!useVoice)}
+            >
+              <Volume2 className="mr-2 h-4 w-4" />
+              Voice
+            </Button>
           </div>
 
           <Button
             onClick={startStop}
-            className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            className="w-full"
+            size="lg"
           >
             {isPlaying ? (
               <Square className="mr-2 h-4 w-4" />
@@ -572,8 +581,8 @@ export default function ClickTrackGenerator() {
             )}
             {isPlaying ? "Stop" : "Play"}
           </Button>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
