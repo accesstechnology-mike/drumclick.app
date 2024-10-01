@@ -95,25 +95,37 @@ export default function ClickTrackGenerator() {
     if (!audioContextRef.current) return;
 
     const currentTime = audioContextRef.current.currentTime;
-    const beatsPerMeasure = parseInt(timeSignatureRef.current.split("/")[0]);
+    const [beatsPerMeasure, beatUnit] = timeSignatureRef.current.split("/").map(Number);
+    const isCompound = timeSignatureRef.current === "6/8 (Compound)";
 
     while (nextNoteTimeRef.current < currentTime + 0.1) {
-      const isFirstBeat = currentBeatRef.current % beatsPerMeasure === 0;
+      const beatInMeasure = currentBeatRef.current % beatsPerMeasure;
+      const isAccentedBeat = isCompound 
+        ? (beatInMeasure === 0 || beatInMeasure === 3) 
+        : (beatInMeasure === 0 && accentFirstBeatRef.current);
       
       if (nextNoteTimeRef.current >= nextBeatTimeRef.current) {
         const scheduleTime = Math.max(nextNoteTimeRef.current, currentTime + 0.1);
         
         if (useClick) {
-          const frequency = (isFirstBeat && accentFirstBeatRef.current) ? 1000 : 600;
+          const frequency = isAccentedBeat ? 1000 : 600;
           createClickSound(scheduleTime, frequency);
         }
         
         if (useVoice && audioBuffersRef.current.length > 0) {
-          playVoice(scheduleTime, currentBeatRef.current % beatsPerMeasure);
+          if (isCompound) {
+            if (beatInMeasure === 0) {
+              playVoice(scheduleTime, 0); // Play "1"
+            } else if (beatInMeasure === 3) {
+              playVoice(scheduleTime, 1); // Play "2"
+            }
+          } else {
+            playVoice(scheduleTime, beatInMeasure);
+          }
         }
         
         if (currentTime - lastUpdateTimeRef.current >= 1 / 60) {
-          setActiveBeat(currentBeatRef.current % beatsPerMeasure);
+          setActiveBeat(beatInMeasure);
           lastUpdateTimeRef.current = currentTime;
         }
 
@@ -268,6 +280,7 @@ export default function ClickTrackGenerator() {
                 <SelectItem value="4/4">4/4</SelectItem>
                 <SelectItem value="5/4">5/4</SelectItem>
                 <SelectItem value="6/8">6/8</SelectItem>
+                <SelectItem value="6/8 (Compound)">6/8 (Compound)</SelectItem>
                 <SelectItem value="7/8">7/8</SelectItem>
               </SelectContent>
             </Select>
