@@ -1,6 +1,6 @@
 # 🎵 Click Track Generator
 
-A sleek, modern web application for musicians and music enthusiasts to create customisable click tracks with ease.
+A sleek, modern web application for musicians and music enthusiasts to create customisable click tracks with ease, built entirely by AI
 
 ## 🌟 Features
 
@@ -21,16 +21,19 @@ A sleek, modern web application for musicians and music enthusiasts to create cu
 ### Installation
 
 1. Clone the repository:
+
    ```
    git clone https://github.com/accesstechnology-mike/click-track-generator.git
    ```
 
 2. Navigate to the project directory:
+
    ```
    cd click-track-generator
    ```
 
 3. Install dependencies:
+
    ```
    npm install
    # or
@@ -38,6 +41,7 @@ A sleek, modern web application for musicians and music enthusiasts to create cu
    ```
 
 4. Start the development server:
+
    ```
    npm run dev
    # or
@@ -85,11 +89,9 @@ Project Link: [https://github.com/accesstechnology-mike/click-track-generator](h
 
 ## 🙏 Acknowledgments
 
-- [Next.js Documentation](https://nextjs.org/docs)
-- [React Documentation](https://reactjs.org/docs/getting-started.html)
-- [Tailwind CSS Documentation](https://tailwindcss.com/docs)
-- [Web Audio API Documentation](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
+- [V0 by Vercel](https://v0.dev/) - Used to create the initial implementation
+- [Cursor](https://cursor.sh/)
 
 ---
 
-Made with ❤️ by [Mike Thrussell](https://github.com/accesstechnology-mike)
+Made with ❤️ by [Mike Thrussell](https://github.com/accesstechnology-mike) and [Claude Sonnet 3.5](https://claude.ai)
