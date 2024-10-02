@@ -41,8 +41,12 @@ export default function ClickTrackGenerator() {
   const [useClick, setUseClick] = useState(true);
   const [useVoice, setUseVoice] = useState(false);
   const audioBuffersRef = useRef<AudioBuffer[]>([]);
-  const [subdivision, setSubdivision] = useState<"1" | "1/2" | "1/3" | "1/4">("1");
+  const [subdivision, setSubdivision] = useState<"1" | "1/2" | "1/3" | "1/4">(
+    "1"
+  );
   const subdivisionRef = useRef(subdivision);
+  const [voiceSubdivision, setVoiceSubdivision] = useState(false);
+  const voiceSubdivisionRef = useRef(voiceSubdivision);
 
   const createClickSound = useCallback((time: number, frequency: number) => {
     if (!audioContextRef.current) return;
@@ -96,76 +100,82 @@ export default function ClickTrackGenerator() {
 
     const source = audioContextRef.current.createBufferSource();
     const gainNode = audioContextRef.current.createGain();
-    
+
     source.buffer = audioBuffersRef.current[number];
-    
+
     // Set the gain to 0.5 (50% volume)
     gainNode.gain.setValueAtTime(0.5, time);
-    
+
     source.connect(gainNode);
     gainNode.connect(audioContextRef.current.destination);
-    
+
     source.start(time);
   }, []);
 
-  const createSubdivisionClick = useCallback((time: number, subBeat: number, subCount: number, isAccented: boolean) => {
-    if (!audioContextRef.current) return;
+  const createSubdivisionClick = useCallback(
+    (time: number, subBeat: number, subCount: number, isAccented: boolean) => {
+      if (!audioContextRef.current) return;
 
-    let frequency: number;
-    if (subBeat === 0) {
-      frequency = isAccented ? 1000 : 600; // Main beat
-    } else if (subCount === 2) {
-      frequency = 400; // Half note
-    } else if (subCount === 3) {
-      frequency = subBeat === 1 ? 500 : 400; // Triplet
-    } else if (subCount === 4) {
-      frequency = subBeat === 2 ? 500 : 400; // Quarter note
-    } else {
-      return; // No subdivision
-    }
+      let frequency: number;
+      if (subBeat === 0) {
+        frequency = isAccented ? 1000 : 600; // Main beat
+      } else if (subCount === 2) {
+        frequency = 400; // Half note
+      } else if (subCount === 3) {
+        frequency = subBeat === 1 ? 500 : 400; // Triplet
+      } else if (subCount === 4) {
+        frequency = subBeat === 2 ? 500 : 400; // Quarter note
+      } else {
+        return; // No subdivision
+      }
 
-    const osc = audioContextRef.current.createOscillator();
-    const gainNode = audioContextRef.current.createGain();
-
-    osc.connect(gainNode);
-    gainNode.connect(audioContextRef.current.destination);
-
-    osc.frequency.setValueAtTime(frequency, time);
-    gainNode.gain.setValueAtTime(0, time);
-    gainNode.gain.linearRampToValueAtTime(0.3, time + 0.005);
-    gainNode.gain.exponentialRampToValueAtTime(0.00001, time + 0.1);
-
-    osc.start(time);
-    osc.stop(time + 0.1);
-  }, []);
-
-  const playSubdivision = useCallback((time: number, subBeat: number, subCount: number) => {
-    if (!audioContextRef.current) return;
-
-    let sampleIndex: number;
-    if (subCount === 2) {
-      sampleIndex = 8; // "and"
-    } else if (subCount === 3) {
-      sampleIndex = subBeat === 1 ? 7 : 9; // "eee" or "ah"
-    } else if (subCount === 4) {
-      sampleIndex = subBeat === 1 ? 7 : subBeat === 2 ? 8 : 9; // "eee", "and", or "ah"
-    } else {
-      return; // No subdivision
-    }
-
-    if (audioBuffersRef.current[sampleIndex]) {
-      const source = audioContextRef.current.createBufferSource();
+      const osc = audioContextRef.current.createOscillator();
       const gainNode = audioContextRef.current.createGain();
-      
-      source.buffer = audioBuffersRef.current[sampleIndex];
-      gainNode.gain.setValueAtTime(0.5, time);
-      
-      source.connect(gainNode);
+
+      osc.connect(gainNode);
       gainNode.connect(audioContextRef.current.destination);
-      
-      source.start(time);
-    }
-  }, []);
+
+      osc.frequency.setValueAtTime(frequency, time);
+      gainNode.gain.setValueAtTime(0, time);
+      gainNode.gain.linearRampToValueAtTime(0.3, time + 0.005);
+      gainNode.gain.exponentialRampToValueAtTime(0.00001, time + 0.1);
+
+      osc.start(time);
+      osc.stop(time + 0.1);
+    },
+    []
+  );
+
+  const playSubdivision = useCallback(
+    (time: number, subBeat: number, subCount: number) => {
+      if (!audioContextRef.current) return;
+
+      let sampleIndex: number;
+      if (subCount === 2) {
+        sampleIndex = 8; // "and"
+      } else if (subCount === 3) {
+        sampleIndex = subBeat === 1 ? 7 : 9; // "eee" or "ah"
+      } else if (subCount === 4) {
+        sampleIndex = subBeat === 1 ? 7 : subBeat === 2 ? 8 : 9; // "eee", "and", or "ah"
+      } else {
+        return; // No subdivision
+      }
+
+      if (audioBuffersRef.current[sampleIndex]) {
+        const source = audioContextRef.current.createBufferSource();
+        const gainNode = audioContextRef.current.createGain();
+
+        source.buffer = audioBuffersRef.current[sampleIndex];
+        gainNode.gain.setValueAtTime(0.5, time);
+
+        source.connect(gainNode);
+        gainNode.connect(audioContextRef.current.destination);
+
+        source.start(time);
+      }
+    },
+    []
+  );
 
   const scheduleCompound68 = useCallback(() => {
     if (!audioContextRef.current) return;
@@ -175,10 +185,15 @@ export default function ClickTrackGenerator() {
 
     while (nextNoteTimeRef.current < currentTime + 0.1) {
       const beatInMeasure = currentBeatRef.current % beatsPerMeasure;
-      const isAccentedBeat = (beatInMeasure === 0 || beatInMeasure === 3) && accentFirstBeatRef.current;
+      const isAccentedBeat =
+        (beatInMeasure === 0 || beatInMeasure === 3) &&
+        accentFirstBeatRef.current;
 
       if (nextNoteTimeRef.current >= nextBeatTimeRef.current) {
-        const scheduleTime = Math.max(nextNoteTimeRef.current, currentTime + 0.1);
+        const scheduleTime = Math.max(
+          nextNoteTimeRef.current,
+          currentTime + 0.1
+        );
 
         if (useClick) {
           const frequency = isAccentedBeat ? 1000 : 600;
@@ -217,33 +232,49 @@ export default function ClickTrackGenerator() {
     if (!audioContextRef.current) return;
 
     const currentTime = audioContextRef.current.currentTime;
-    const [beatsPerMeasure, beatUnit] = timeSignatureRef.current.split("/").map(Number);
+    const [beatsPerMeasure, beatUnit] = timeSignatureRef.current
+      .split("/")
+      .map(Number);
 
-    const subCount = subdivisionRef.current === "1" ? 1 : 
-                     subdivisionRef.current === "1/2" ? 2 : 
-                     subdivisionRef.current === "1/3" ? 3 : 4;
+    const subCount =
+      subdivisionRef.current === "1"
+        ? 1
+        : subdivisionRef.current === "1/2"
+        ? 2
+        : subdivisionRef.current === "1/3"
+        ? 3
+        : 4;
 
     while (nextNoteTimeRef.current < currentTime + 0.1) {
-      const beatInMeasure = Math.floor(currentBeatRef.current / subCount) % beatsPerMeasure;
+      const beatInMeasure =
+        Math.floor(currentBeatRef.current / subCount) % beatsPerMeasure;
       const subBeat = currentBeatRef.current % subCount;
       const isAccentedBeat = beatInMeasure === 0 && accentFirstBeatRef.current;
 
       if (nextNoteTimeRef.current >= nextBeatTimeRef.current) {
-        const scheduleTime = Math.max(nextNoteTimeRef.current, currentTime + 0.1);
+        const scheduleTime = Math.max(
+          nextNoteTimeRef.current,
+          currentTime + 0.1
+        );
 
         if (useClick) {
           if (subBeat === 0) {
             const frequency = isAccentedBeat ? 1000 : 600;
             createClickSound(scheduleTime, frequency);
           } else {
-            createSubdivisionClick(scheduleTime, subBeat, subCount, isAccentedBeat);
+            createSubdivisionClick(
+              scheduleTime,
+              subBeat,
+              subCount,
+              isAccentedBeat
+            );
           }
         }
 
         if (useVoice && audioBuffersRef.current.length > 0) {
           if (subBeat === 0) {
             playVoice(scheduleTime, beatInMeasure);
-          } else {
+          } else if (voiceSubdivisionRef.current) {
             playSubdivision(scheduleTime, subBeat, subCount);
           }
         }
@@ -261,10 +292,17 @@ export default function ClickTrackGenerator() {
         }
       }
 
-      nextNoteTimeRef.current += (60.0 / tempoRef.current) / subCount;
+      nextNoteTimeRef.current += 60.0 / tempoRef.current / subCount;
     }
     schedulerIdRef.current = requestAnimationFrame(scheduleClick);
-  }, [createClickSound, createSubdivisionClick, playVoice, playSubdivision, useClick, useVoice]);
+  }, [
+    createClickSound,
+    createSubdivisionClick,
+    playVoice,
+    playSubdivision,
+    useClick,
+    useVoice,
+  ]);
 
   const startStop = () => {
     if (isPlaying) {
@@ -306,28 +344,36 @@ export default function ClickTrackGenerator() {
       // Reset the current beat when time signature changes
       currentBeatRef.current = 0;
       setActiveBeat(0);
-      
+
       // Cancel the existing scheduler
       if (schedulerIdRef.current) {
         cancelAnimationFrame(schedulerIdRef.current);
       }
-      
+
       // Start the appropriate scheduler based on the new time signature
       if (timeSignature === "6/8 (Compound)") {
         scheduleCompound68();
       } else {
         scheduleClick();
       }
-      
+
       // Adjust nextBeatTimeRef when tempo changes
       if (tempoRef.current !== tempo) {
         const currentTime = audioContextRef.current!.currentTime;
         const timeSinceLastBeat = currentTime - nextBeatTimeRef.current;
         const newBeatDuration = 60.0 / tempo;
-        nextBeatTimeRef.current = currentTime + newBeatDuration - timeSinceLastBeat;
+        nextBeatTimeRef.current =
+          currentTime + newBeatDuration - timeSinceLastBeat;
       }
     }
-  }, [tempo, timeSignature, accentFirstBeat, isPlaying, scheduleClick, scheduleCompound68]);
+  }, [
+    tempo,
+    timeSignature,
+    accentFirstBeat,
+    isPlaying,
+    scheduleClick,
+    scheduleCompound68,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -337,12 +383,21 @@ export default function ClickTrackGenerator() {
   }, []);
 
   const renderLights = () => {
-    const beatsPerMeasure = parseInt(timeSignature.split("/")[0]);
+    const beatsPerMeasure =
+      timeSignature === "6/8 (Compound)"
+        ? 6
+        : parseInt(timeSignature.split("/")[0]);
     return Array.from({ length: beatsPerMeasure }, (_, i) => (
       <div
         key={i}
-        className={`w-4 h-4 rounded-full ${
-          i === activeBeat ? "bg-green-500" : "bg-gray-300"
+        className={`w-8 h-8 rounded-full ${
+          i === activeBeat
+            ? ((timeSignature === "6/8 (Compound)" && (i === 0 || i === 3)) ||
+                (timeSignature !== "6/8 (Compound)" && i === 0)) &&
+              accentFirstBeat
+              ? "bg-yellow-400" // Brighter yellow for accented beats
+              : "bg-green-500" // Green for non-accented active beats
+            : "bg-gray-300" // Gray for inactive beats
         } transition-colors duration-100`}
       ></div>
     ));
@@ -413,6 +468,10 @@ export default function ClickTrackGenerator() {
     subdivisionRef.current = subdivision;
   }, [subdivision]);
 
+  useEffect(() => {
+    voiceSubdivisionRef.current = voiceSubdivision;
+  }, [voiceSubdivision]);
+
   // Add this useEffect near your other useEffect hooks
   useEffect(() => {
     if (timeSignature === "6/8 (Compound)") {
@@ -430,13 +489,15 @@ export default function ClickTrackGenerator() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="text-3xl font-bold text-center">Click Track Generator</CardTitle>
+          <CardTitle className="text-3xl font-bold text-center">
+            Click Track Generator
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <Tabs defaultValue="settings" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="settings">Settings</TabsTrigger>
-              <TabsTrigger value="advanced">Advanced</TabsTrigger>
+              <TabsTrigger value="settings">Metronome</TabsTrigger>
+              <TabsTrigger value="advanced">Settings</TabsTrigger>
             </TabsList>
             <TabsContent value="settings" className="space-y-4">
               <div>
@@ -453,7 +514,9 @@ export default function ClickTrackGenerator() {
                     <SelectItem value="4/4">4/4</SelectItem>
                     <SelectItem value="5/4">5/4</SelectItem>
                     <SelectItem value="6/8">6/8</SelectItem>
-                    <SelectItem value="6/8 (Compound)">6/8 (Compound)</SelectItem>
+                    <SelectItem value="6/8 (Compound)">
+                      6/8 (Compound)
+                    </SelectItem>
                     <SelectItem value="7/8">7/8</SelectItem>
                   </SelectContent>
                 </Select>
@@ -470,8 +533,8 @@ export default function ClickTrackGenerator() {
                     step={1}
                     value={[tempo]}
                     onValueChange={(value) => {
-                      setTempo(value[0])
-                      setTempoInput(value[0].toString())
+                      setTempo(value[0]);
+                      setTempoInput(value[0].toString());
                     }}
                     className="flex-grow"
                   />
@@ -489,7 +552,9 @@ export default function ClickTrackGenerator() {
             </TabsContent>
             <TabsContent value="advanced" className="space-y-4">
               <div className="flex items-center justify-between">
-                <Label htmlFor="accent-mode" className="text-sm font-medium">Accent First Beat</Label>
+                <Label htmlFor="accent-mode" className="text-sm font-medium">
+                  Accent
+                </Label>
                 <Switch
                   id="accent-mode"
                   checked={accentFirstBeat}
@@ -503,7 +568,9 @@ export default function ClickTrackGenerator() {
                 <RadioGroup
                   id="subdivision"
                   value={subdivision}
-                  onValueChange={(value) => setSubdivision(value as "1" | "1/2" | "1/3" | "1/4")}
+                  onValueChange={(value) =>
+                    setSubdivision(value as "1" | "1/2" | "1/3" | "1/4")
+                  }
                   className="flex space-x-2"
                   disabled={!useClick && !useVoice}
                 >
@@ -512,32 +579,66 @@ export default function ClickTrackGenerator() {
                     <Label htmlFor="r1">1</Label>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <RadioGroupItem 
-                      value="1/2" 
-                      id="r2" 
+                    <RadioGroupItem
+                      value="1/2"
+                      id="r2"
                       disabled={timeSignature === "6/8 (Compound)"}
                     />
-                    <Label htmlFor="r2" className={timeSignature === "6/8 (Compound)" ? "text-gray-400" : ""}>1/2</Label>
+                    <Label
+                      htmlFor="r2"
+                      className={
+                        timeSignature === "6/8 (Compound)"
+                          ? "text-gray-400"
+                          : ""
+                      }
+                    >
+                      1/2
+                    </Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="1/3" id="r3" />
                     <Label htmlFor="r3">1/3</Label>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <RadioGroupItem 
-                      value="1/4" 
-                      id="r4" 
+                    <RadioGroupItem
+                      value="1/4"
+                      id="r4"
                       disabled={timeSignature === "6/8 (Compound)"}
                     />
-                    <Label htmlFor="r4" className={timeSignature === "6/8 (Compound)" ? "text-gray-400" : ""}>1/4</Label>
+                    <Label
+                      htmlFor="r4"
+                      className={
+                        timeSignature === "6/8 (Compound)"
+                          ? "text-gray-400"
+                          : ""
+                      }
+                    >
+                      1/4
+                    </Label>
                   </div>
                 </RadioGroup>
+              </div>
+              <div className="flex items-center justify-between">
+                <Label
+                  htmlFor="voice-subdivision"
+                  className="text-sm font-medium"
+                >
+                  Voice Subdivision
+                </Label>
+                <Switch
+                  id="voice-subdivision"
+                  checked={voiceSubdivision}
+                  onCheckedChange={setVoiceSubdivision}
+                />
               </div>
             </TabsContent>
           </Tabs>
 
-          <div className="flex justify-center space-x-2 py-4">
-            {renderLights()}
+          <div className="text-center">
+            <div className="text-6xl font-bold mb-4">{tempo}</div>
+            <div className="flex justify-center space-x-4 py-4">
+              {renderLights()}
+            </div>
           </div>
 
           <div className="flex justify-between space-x-4">
@@ -546,8 +647,8 @@ export default function ClickTrackGenerator() {
               size="sm"
               className={`flex-1 ${
                 useClick
-                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                  : 'hover:bg-secondary'
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "hover:bg-secondary"
               }`}
               onClick={() => toggleClickMode(!useClick)}
             >
@@ -559,8 +660,8 @@ export default function ClickTrackGenerator() {
               size="sm"
               className={`flex-1 ${
                 useVoice
-                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                  : 'hover:bg-secondary'
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "hover:bg-secondary"
               }`}
               onClick={() => toggleVoiceMode(!useVoice)}
             >
@@ -569,11 +670,7 @@ export default function ClickTrackGenerator() {
             </Button>
           </div>
 
-          <Button
-            onClick={startStop}
-            className="w-full"
-            size="lg"
-          >
+          <Button onClick={startStop} className="w-full" size="lg">
             {isPlaying ? (
               <Square className="mr-2 h-4 w-4" />
             ) : (
