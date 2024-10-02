@@ -48,6 +48,19 @@ export default function ClickTrackGenerator() {
   const [voiceSubdivision, setVoiceSubdivision] = useState(false);
   const voiceSubdivisionRef = useRef(voiceSubdivision);
 
+  // New state variables for increasing tempo
+  const [isIncreasingTempo, setIsIncreasingTempo] = useState(false);
+  const [startTempo, setStartTempo] = useState(100);
+  const [endTempo, setEndTempo] = useState(120);
+  const [duration, setDuration] = useState(5); // in minutes
+  const startTimeRef = useRef(0);
+
+  // Add this near the top of your component, with other state declarations
+  const [currentTempo, setCurrentTempo] = useState(tempo);
+
+  // Add this state variable
+  const [displayTempo, setDisplayTempo] = useState(tempo);
+
   const createClickSound = useCallback((time: number, frequency: number) => {
     if (!audioContextRef.current) return;
 
@@ -177,6 +190,15 @@ export default function ClickTrackGenerator() {
     []
   );
 
+  // Update the calculateCurrentTempo function
+  const calculateCurrentTempo = useCallback(() => {
+    if (!isIncreasingTempo || !audioContextRef.current) return tempoRef.current;
+
+    const elapsedTime = (audioContextRef.current.currentTime - startTimeRef.current) / 60; // Convert to minutes
+    const progress = Math.min(elapsedTime / duration, 1);
+    return Math.round(startTempo + progress * (endTempo - startTempo));
+  }, [isIncreasingTempo, startTempo, endTempo, duration]);
+
   const scheduleCompound68 = useCallback(() => {
     if (!audioContextRef.current) return;
 
@@ -228,46 +250,42 @@ export default function ClickTrackGenerator() {
     schedulerIdRef.current = requestAnimationFrame(scheduleCompound68);
   }, [createClickSound, playVoice, playSubdivision, useClick, useVoice]);
 
+  // Update the scheduleClick function
   const scheduleClick = useCallback(() => {
     if (!audioContextRef.current) return;
 
     const currentTime = audioContextRef.current.currentTime;
-    const [beatsPerMeasure, beatUnit] = timeSignatureRef.current
-      .split("/")
-      .map(Number);
+    const [beatsPerMeasure, beatUnit] = timeSignatureRef.current.split("/").map(Number);
 
-    const subCount =
-      subdivisionRef.current === "1"
-        ? 1
-        : subdivisionRef.current === "1/2"
-        ? 2
-        : subdivisionRef.current === "1/3"
-        ? 3
-        : 4;
+    const subCount = subdivisionRef.current === "1" ? 1 : 
+                     subdivisionRef.current === "1/2" ? 2 : 
+                     subdivisionRef.current === "1/3" ? 3 : 4;
 
     while (nextNoteTimeRef.current < currentTime + 0.1) {
-      const beatInMeasure =
-        Math.floor(currentBeatRef.current / subCount) % beatsPerMeasure;
+      const currentTempo = calculateCurrentTempo();
+      const beatDuration = 60.0 / currentTempo;
+      const subBeatDuration = beatDuration / subCount;
+
+      const beatInMeasure = Math.floor(currentBeatRef.current / subCount) % beatsPerMeasure;
       const subBeat = currentBeatRef.current % subCount;
       const isAccentedBeat = beatInMeasure === 0 && accentFirstBeatRef.current;
 
-      if (nextNoteTimeRef.current >= nextBeatTimeRef.current) {
-        const scheduleTime = Math.max(
-          nextNoteTimeRef.current,
-          currentTime + 0.1
-        );
+      if (nextNoteTimeRef.current <= currentTime) {
+        // If we've passed the scheduled time, update to the next beat
+        currentBeatRef.current++;
+        nextNoteTimeRef.current += subBeatDuration;
+        if (subBeat === subCount - 1) {
+          nextBeatTimeRef.current = nextNoteTimeRef.current;
+        }
+      } else {
+        const scheduleTime = nextNoteTimeRef.current;
 
         if (useClick) {
           if (subBeat === 0) {
             const frequency = isAccentedBeat ? 1000 : 600;
             createClickSound(scheduleTime, frequency);
           } else {
-            createSubdivisionClick(
-              scheduleTime,
-              subBeat,
-              subCount,
-              isAccentedBeat
-            );
+            createSubdivisionClick(scheduleTime, subBeat, subCount, isAccentedBeat);
           }
         }
 
@@ -287,12 +305,11 @@ export default function ClickTrackGenerator() {
         }
 
         currentBeatRef.current++;
+        nextNoteTimeRef.current += subBeatDuration;
         if (subBeat === subCount - 1) {
-          nextBeatTimeRef.current += 60.0 / tempoRef.current;
+          nextBeatTimeRef.current = nextNoteTimeRef.current;
         }
       }
-
-      nextNoteTimeRef.current += 60.0 / tempoRef.current / subCount;
     }
     schedulerIdRef.current = requestAnimationFrame(scheduleClick);
   }, [
@@ -302,8 +319,11 @@ export default function ClickTrackGenerator() {
     playSubdivision,
     useClick,
     useVoice,
+    calculateCurrentTempo,
+    voiceSubdivisionRef,
   ]);
 
+  // Update the startStop function
   const startStop = () => {
     if (isPlaying) {
       if (schedulerIdRef.current) cancelAnimationFrame(schedulerIdRef.current);
@@ -324,7 +344,17 @@ export default function ClickTrackGenerator() {
       nextBeatTimeRef.current = nextNoteTimeRef.current;
       lastUpdateTimeRef.current = currentTime;
       currentBeatRef.current = 0;
-      setActiveBeat(0); // Change this line from -1 to 0
+      setActiveBeat(0);
+      
+      if (isIncreasingTempo) {
+        startTimeRef.current = currentTime;
+        tempoRef.current = startTempo;
+        setCurrentTempo(startTempo);
+      } else {
+        tempoRef.current = tempo;
+        setCurrentTempo(tempo);
+      }
+      
       if (timeSignature === "6/8 (Compound)") {
         scheduleCompound68();
       } else {
@@ -403,27 +433,64 @@ export default function ClickTrackGenerator() {
     ));
   };
 
+  // Update the useEffect hook for tempo changes
+  useEffect(() => {
+    if (isPlaying && isIncreasingTempo) {
+      const updateTempo = () => {
+        const newTempo = calculateCurrentTempo();
+        setDisplayTempo(newTempo);
+        setTempoInput(newTempo.toString());
+        tempoRef.current = newTempo;
+      };
+
+      const intervalId = setInterval(updateTempo, 100); // Update frequently
+
+      return () => clearInterval(intervalId);
+    } else {
+      setDisplayTempo(tempo);
+      tempoRef.current = tempo;
+    }
+  }, [isPlaying, isIncreasingTempo, calculateCurrentTempo, tempo]);
+
+  // Update the handleTempoInputChange function
   const handleTempoInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setTempoInput(value);
 
     const numericValue = parseInt(value, 10);
-    if (!isNaN(numericValue)) {
-      if (numericValue >= 40 && numericValue <= 300) {
-        setTempo(numericValue);
+    if (!isNaN(numericValue) && numericValue >= 40 && numericValue <= 300) {
+      setTempo(numericValue);
+      setDisplayTempo(numericValue);
+      if (!isIncreasingTempo) {
+        tempoRef.current = numericValue;
       }
     }
   };
 
+  // Update the handleTempoInputBlur function
   const handleTempoInputBlur = () => {
-    if (tempoInput === "" || parseInt(tempoInput, 10) < 40) {
+    const numericValue = parseInt(tempoInput, 10);
+    if (isNaN(numericValue) || numericValue < 40) {
       setTempoInput("40");
       setTempo(40);
-    } else if (parseInt(tempoInput, 10) > 300) {
+      setDisplayTempo(40);
+      if (!isIncreasingTempo) {
+        tempoRef.current = 40;
+      }
+    } else if (numericValue > 300) {
       setTempoInput("300");
       setTempo(300);
+      setDisplayTempo(300);
+      if (!isIncreasingTempo) {
+        tempoRef.current = 300;
+      }
     } else {
-      setTempoInput(tempo.toString());
+      setTempoInput(numericValue.toString());
+      setTempo(numericValue);
+      setDisplayTempo(numericValue);
+      if (!isIncreasingTempo) {
+        tempoRef.current = numericValue;
+      }
     }
   };
 
@@ -531,12 +598,17 @@ export default function ClickTrackGenerator() {
                     min={40}
                     max={300}
                     step={1}
-                    value={[tempo]}
+                    value={[displayTempo]}
                     onValueChange={(value) => {
-                      setTempo(value[0]);
-                      setTempoInput(value[0].toString());
+                      if (!isIncreasingTempo) {
+                        setTempo(value[0]);
+                        setDisplayTempo(value[0]);
+                        setTempoInput(value[0].toString());
+                        tempoRef.current = value[0];
+                      }
                     }}
                     className="flex-grow"
+                    disabled={isIncreasingTempo}
                   />
                   <Input
                     type="text"
@@ -546,6 +618,7 @@ export default function ClickTrackGenerator() {
                     onChange={handleTempoInputChange}
                     onBlur={handleTempoInputBlur}
                     className="w-20"
+                    disabled={isIncreasingTempo}
                   />
                 </div>
               </div>
@@ -631,11 +704,56 @@ export default function ClickTrackGenerator() {
                   onCheckedChange={setVoiceSubdivision}
                 />
               </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="increasing-tempo" className="text-sm font-medium">Increasing Tempo</Label>
+                <Switch
+                  id="increasing-tempo"
+                  checked={isIncreasingTempo}
+                  onCheckedChange={setIsIncreasingTempo}
+                />
+              </div>
+              {isIncreasingTempo && (
+                <>
+                  <div>
+                    <Label htmlFor="start-tempo" className="text-sm font-medium">Start Tempo</Label>
+                    <Input
+                      id="start-tempo"
+                      type="number"
+                      value={startTempo}
+                      onChange={(e) => setStartTempo(Number(e.target.value))}
+                      min={40}
+                      max={300}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="end-tempo" className="text-sm font-medium">End Tempo</Label>
+                    <Input
+                      id="end-tempo"
+                      type="number"
+                      value={endTempo}
+                      onChange={(e) => setEndTempo(Number(e.target.value))}
+                      min={40}
+                      max={300}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="duration" className="text-sm font-medium">Duration (minutes)</Label>
+                    <Input
+                      id="duration"
+                      type="number"
+                      value={duration}
+                      onChange={(e) => setDuration(Number(e.target.value))}
+                      min={1}
+                      max={60}
+                    />
+                  </div>
+                </>
+              )}
             </TabsContent>
           </Tabs>
 
           <div className="text-center">
-            <div className="text-6xl font-bold mb-4">{tempo}</div>
+            <div className="text-6xl font-bold mb-4">{displayTempo} BPM</div>
             <div className="flex justify-center space-x-4 py-4">
               {renderLights()}
             </div>
