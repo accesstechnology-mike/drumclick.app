@@ -194,7 +194,8 @@ export default function ClickTrackGenerator() {
   const calculateCurrentTempo = useCallback(() => {
     if (!isIncreasingTempo || !audioContextRef.current) return tempoRef.current;
 
-    const elapsedTime = (audioContextRef.current.currentTime - startTimeRef.current) / 60; // Convert to minutes
+    const elapsedTime =
+      (audioContextRef.current.currentTime - startTimeRef.current) / 60; // Convert to minutes
     const progress = Math.min(elapsedTime / duration, 1);
     return Math.round(startTempo + progress * (endTempo - startTempo));
   }, [isIncreasingTempo, startTempo, endTempo, duration]);
@@ -255,18 +256,26 @@ export default function ClickTrackGenerator() {
     if (!audioContextRef.current) return;
 
     const currentTime = audioContextRef.current.currentTime;
-    const [beatsPerMeasure, beatUnit] = timeSignatureRef.current.split("/").map(Number);
+    const [beatsPerMeasure, beatUnit] = timeSignatureRef.current
+      .split("/")
+      .map(Number);
 
-    const subCount = subdivisionRef.current === "1" ? 1 : 
-                     subdivisionRef.current === "1/2" ? 2 : 
-                     subdivisionRef.current === "1/3" ? 3 : 4;
+    const subCount =
+      subdivisionRef.current === "1"
+        ? 1
+        : subdivisionRef.current === "1/2"
+        ? 2
+        : subdivisionRef.current === "1/3"
+        ? 3
+        : 4;
 
     while (nextNoteTimeRef.current < currentTime + 0.1) {
       const currentTempo = calculateCurrentTempo();
       const beatDuration = 60.0 / currentTempo;
       const subBeatDuration = beatDuration / subCount;
 
-      const beatInMeasure = Math.floor(currentBeatRef.current / subCount) % beatsPerMeasure;
+      const beatInMeasure =
+        Math.floor(currentBeatRef.current / subCount) % beatsPerMeasure;
       const subBeat = currentBeatRef.current % subCount;
       const isAccentedBeat = beatInMeasure === 0 && accentFirstBeatRef.current;
 
@@ -285,7 +294,12 @@ export default function ClickTrackGenerator() {
             const frequency = isAccentedBeat ? 1000 : 600;
             createClickSound(scheduleTime, frequency);
           } else {
-            createSubdivisionClick(scheduleTime, subBeat, subCount, isAccentedBeat);
+            createSubdivisionClick(
+              scheduleTime,
+              subBeat,
+              subCount,
+              isAccentedBeat
+            );
           }
         }
 
@@ -345,7 +359,7 @@ export default function ClickTrackGenerator() {
       lastUpdateTimeRef.current = currentTime;
       currentBeatRef.current = 0;
       setActiveBeat(0);
-      
+
       if (isIncreasingTempo) {
         startTimeRef.current = currentTime;
         tempoRef.current = startTempo;
@@ -354,7 +368,7 @@ export default function ClickTrackGenerator() {
         tempoRef.current = tempo;
         setCurrentTempo(tempo);
       }
-      
+
       if (timeSignature === "6/8 (Compound)") {
         scheduleCompound68();
       } else {
@@ -626,7 +640,7 @@ export default function ClickTrackGenerator() {
             <TabsContent value="advanced" className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label htmlFor="accent-mode" className="text-sm font-medium">
-                  Accent
+                  Accents
                 </Label>
                 <Switch
                   id="accent-mode"
@@ -705,7 +719,12 @@ export default function ClickTrackGenerator() {
                 />
               </div>
               <div className="flex items-center justify-between">
-                <Label htmlFor="increasing-tempo" className="text-sm font-medium">Increasing Tempo</Label>
+                <Label
+                  htmlFor="increasing-tempo"
+                  className="text-sm font-medium"
+                >
+                  Increasing Tempo
+                </Label>
                 <Switch
                   id="increasing-tempo"
                   checked={isIncreasingTempo}
@@ -715,7 +734,12 @@ export default function ClickTrackGenerator() {
               {isIncreasingTempo && (
                 <>
                   <div>
-                    <Label htmlFor="start-tempo" className="text-sm font-medium">Start Tempo</Label>
+                    <Label
+                      htmlFor="start-tempo"
+                      className="text-sm font-medium"
+                    >
+                      Start Tempo
+                    </Label>
                     <Input
                       id="start-tempo"
                       type="number"
@@ -726,7 +750,9 @@ export default function ClickTrackGenerator() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="end-tempo" className="text-sm font-medium">End Tempo</Label>
+                    <Label htmlFor="end-tempo" className="text-sm font-medium">
+                      End Tempo
+                    </Label>
                     <Input
                       id="end-tempo"
                       type="number"
@@ -737,7 +763,9 @@ export default function ClickTrackGenerator() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="duration" className="text-sm font-medium">Duration (minutes)</Label>
+                    <Label htmlFor="duration" className="text-sm font-medium">
+                      Duration (minutes)
+                    </Label>
                     <Input
                       id="duration"
                       type="number"
@@ -753,7 +781,7 @@ export default function ClickTrackGenerator() {
           </Tabs>
 
           <div className="text-center">
-            <div className="text-6xl font-bold mb-4">{displayTempo} BPM</div>
+            <div className="text-6xl font-bold mb-4">{displayTempo}</div>
             <div className="flex justify-center space-x-4 py-4">
               {renderLights()}
             </div>
