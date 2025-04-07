@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import AudioWakeLock from "./AudioWakeLock";
 
 interface WindowWithWebkitAudioContext extends Window {
   webkitAudioContext?: typeof AudioContext;
@@ -47,6 +48,11 @@ export default function ClickTrackGenerator() {
   const subdivisionRef = useRef(subdivision);
   const [voiceSubdivision, setVoiceSubdivision] = useState(false);
   const voiceSubdivisionRef = useRef(voiceSubdivision);
+  const hadToResumeRef = useRef(false);
+  // Add refs for background audio
+  const wakeLockSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const wakeLockGainRef = useRef<GainNode | null>(null);
+  const hiddenAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // New state variables for increasing tempo
   const [isIncreasingTempo, setIsIncreasingTempo] = useState(false);
@@ -337,19 +343,144 @@ export default function ClickTrackGenerator() {
     voiceSubdivisionRef,
   ]);
 
+  // Create a wake lock function to prevent audio from stopping
+  const createWakeLock = useCallback(() => {
+    if (!audioContextRef.current) return;
+    
+    // First, clean up any existing wake lock
+    if (wakeLockSourceRef.current) {
+      wakeLockSourceRef.current.stop();
+      wakeLockSourceRef.current.disconnect();
+      wakeLockSourceRef.current = null;
+    }
+    
+    // Create a silent buffer
+    const buffer = audioContextRef.current.createBuffer(
+      1, // mono
+      audioContextRef.current.sampleRate * 2, // 2 seconds of silence
+      audioContextRef.current.sampleRate
+    );
+    
+    // Create a source node
+    wakeLockSourceRef.current = audioContextRef.current.createBufferSource();
+    wakeLockSourceRef.current.buffer = buffer;
+    wakeLockSourceRef.current.loop = true; // Loop it continuously
+    
+    // Create a gain node with zero gain (silence)
+    wakeLockGainRef.current = audioContextRef.current.createGain();
+    wakeLockGainRef.current.gain.value = 0.001; // Near silence, but not completely silent
+    
+    // Connect the source to the gain node, and the gain node to the destination
+    wakeLockSourceRef.current.connect(wakeLockGainRef.current);
+    wakeLockGainRef.current.connect(audioContextRef.current.destination);
+    
+    // Start the source node
+    wakeLockSourceRef.current.start();
+    
+    console.log('Audio wake lock created');
+  }, []);
+  
+  // Add effect to clean up wake lock
+  useEffect(() => {
+    return () => {
+      if (wakeLockSourceRef.current) {
+        wakeLockSourceRef.current.stop();
+        wakeLockSourceRef.current.disconnect();
+        wakeLockSourceRef.current = null;
+      }
+      if (wakeLockGainRef.current) {
+        wakeLockGainRef.current.disconnect();
+        wakeLockGainRef.current = null;
+      }
+    };
+  }, []);
+
+  // Add a function to create and play a silent audio file
+  const initializeSilentAudio = useCallback(() => {
+    if (!hiddenAudioRef.current) {
+      hiddenAudioRef.current = new Audio("/silent-audio.mp3");
+      hiddenAudioRef.current.loop = true;
+      hiddenAudioRef.current.volume = 0.001;
+      
+      // Add event listeners to track and fix playback issues
+      hiddenAudioRef.current.addEventListener('pause', async () => {
+        if (isPlaying && hiddenAudioRef.current) {
+          try {
+            await hiddenAudioRef.current.play();
+          } catch (e) {
+            console.warn('Could not auto-resume silent audio:', e);
+          }
+        }
+      });
+    }
+    
+    // Attempt to play the silent audio
+    if (hiddenAudioRef.current) {
+      hiddenAudioRef.current.play().catch(e => {
+        console.warn('Silent audio playback failed:', e);
+      });
+    }
+  }, [isPlaying]);
+  
+  // Clean up the silent audio when component unmounts
+  useEffect(() => {
+    return () => {
+      if (hiddenAudioRef.current) {
+        hiddenAudioRef.current.pause();
+        hiddenAudioRef.current.src = '';
+        hiddenAudioRef.current = null;
+      }
+    };
+  }, []);
+
   // Update the startStop function
   const startStop = () => {
     if (isPlaying) {
       if (schedulerIdRef.current) cancelAnimationFrame(schedulerIdRef.current);
       setIsPlaying(false);
       setActiveBeat(-1);
+      
+      // Clean up wake lock
+      if (wakeLockSourceRef.current) {
+        wakeLockSourceRef.current.stop();
+        wakeLockSourceRef.current.disconnect();
+        wakeLockSourceRef.current = null;
+      }
+      
+      // Stop the silent audio
+      if (hiddenAudioRef.current) {
+        hiddenAudioRef.current.pause();
+      }
+      
       if (audioContextRef.current) {
         audioContextRef.current.close();
         audioContextRef.current = null;
       }
     } else {
-      audioContextRef.current = new (window.AudioContext ||
-        (window as WindowWithWebkitAudioContext).webkitAudioContext)();
+      // Create an audio context that will keep running in the background
+      const AudioContextClass = window.AudioContext || 
+        (window as WindowWithWebkitAudioContext).webkitAudioContext;
+      
+      audioContextRef.current = new AudioContextClass();
+      
+      // Set up the wake lock for background audio
+      createWakeLock();
+      
+      // Initialize the silent audio element
+      initializeSilentAudio();
+      
+      // Request permission to keep audio running in background using MediaSession API
+      if (navigator.mediaSession) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: 'DrumClick',
+          artist: 'Metronome',
+          album: 'DrumClick.app',
+        });
+        
+        navigator.mediaSession.setActionHandler('play', () => {});
+        navigator.mediaSession.setActionHandler('pause', () => {});
+      }
+      
       loadAudioFiles();
       const currentTime = audioContextRef.current.currentTime;
 
@@ -566,266 +697,410 @@ export default function ClickTrackGenerator() {
     }
   }, [timeSignature, subdivision]);
 
+  // Modify the visibilitychange handler
+  useEffect(() => {
+    // Function to handle visibility change
+    const handleVisibilityChange = async () => {
+      if (!audioContextRef.current || !isPlaying) return;
+      
+      // Always try to resume the audio context when visibility state changes
+      if (audioContextRef.current.state === 'suspended') {
+        try {
+          await audioContextRef.current.resume();
+          console.log('AudioContext resumed on visibility change');
+          
+          // If our wake lock was lost, recreate it
+          if (!wakeLockSourceRef.current) {
+            createWakeLock();
+          }
+        } catch (error) {
+          console.error('Failed to resume AudioContext:', error);
+        }
+      }
+    };
+
+    // Register the event listener
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Also listen for 'suspend' events on the AudioContext and resume if needed
+    const handleContextSuspend = async () => {
+      if (!audioContextRef.current || !isPlaying) return;
+      
+      try {
+        await audioContextRef.current.resume();
+        console.log('AudioContext resumed after suspend event');
+      } catch (error) {
+        console.error('Failed to resume AudioContext after suspend:', error);
+      }
+    };
+    
+    if (audioContextRef.current) {
+      audioContextRef.current.onstatechange = async (event) => {
+        if (audioContextRef.current?.state === 'suspended' && isPlaying) {
+          await handleContextSuspend();
+        }
+      };
+    }
+    
+    // Clean up the event listeners on component unmount
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (audioContextRef.current) {
+        audioContextRef.current.onstatechange = null;
+      }
+    };
+  }, [isPlaying, createWakeLock]);
+
+  // Add a function to update MediaSession for metadata and controls
+  const updateMediaSession = useCallback(() => {
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: `DrumClick - ${isIncreasingTempo ? `${startTempo}-${endTempo}` : displayTempo} BPM`,
+        artist: `Time Signature: ${timeSignature}`,
+        album: 'DrumClick.app',
+        artwork: [
+          { src: '/logo.png', sizes: '512x512', type: 'image/png' },
+        ]
+      });
+
+      // Set up action handlers for media controls
+      navigator.mediaSession.setActionHandler('play', () => {
+        if (!isPlaying) {
+          // We can't call startStop directly to avoid circular dependency
+          // Instead, trigger a state change that will lead to startStop being called
+          setIsPlaying(true);
+        }
+      });
+      
+      navigator.mediaSession.setActionHandler('pause', () => {
+        if (isPlaying) {
+          setIsPlaying(false);
+        }
+      });
+      
+      navigator.mediaSession.setActionHandler('stop', () => {
+        if (isPlaying) {
+          setIsPlaying(false);
+        }
+      });
+      
+      // Update playback state
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    }
+  }, [isPlaying, startTempo, endTempo, displayTempo, timeSignature, isIncreasingTempo]);
+  
+  // Call updateMediaSession when relevant states change
+  useEffect(() => {
+    updateMediaSession();
+  }, [isPlaying, timeSignature, displayTempo, updateMediaSession]);
+
+  // Add a function to interact with the service worker
+  const pingServiceWorker = useCallback(() => {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'KEEP_ALIVE',
+        isPlaying
+      });
+    }
+  }, [isPlaying]);
+
+  // Set up regular pinging of the service worker
+  useEffect(() => {
+    if (isPlaying) {
+      // Ping the service worker immediately when playing starts
+      pingServiceWorker();
+      
+      // Set up an interval to ping the service worker
+      const pingInterval = setInterval(pingServiceWorker, 10000);
+      
+      return () => clearInterval(pingInterval);
+    }
+  }, [isPlaying, pingServiceWorker]);
+  
+  // Listen for messages from the service worker
+  useEffect(() => {
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'STILL_ALIVE') {
+        console.log('Service worker is still alive');
+        
+        // If the audio context is suspended, try to resume it
+        if (isPlaying && audioContextRef.current && audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume().catch(e => {
+            console.warn('Failed to resume audio context from service worker message:', e);
+          });
+        }
+      }
+    };
+    
+    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
+    
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage);
+    };
+  }, [isPlaying]);
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-3xl font-bold text-center">
-            Click Track Generator
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <Tabs defaultValue="settings" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="settings">Metronome</TabsTrigger>
-              <TabsTrigger value="advanced">Settings</TabsTrigger>
-            </TabsList>
-            <TabsContent value="settings" className="space-y-4">
-              <div>
-                <Label htmlFor="timeSignature" className="text-sm font-medium">
-                  Time Signature
-                </Label>
-                <Select value={timeSignature} onValueChange={setTimeSignature}>
-                  <SelectTrigger id="timeSignature">
-                    <SelectValue placeholder="Select time signature" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="2/4">2/4</SelectItem>
-                    <SelectItem value="3/4">3/4</SelectItem>
-                    <SelectItem value="4/4">4/4</SelectItem>
-                    <SelectItem value="5/4">5/4</SelectItem>
-                    <SelectItem value="6/8">6/8</SelectItem>
-                    <SelectItem value="6/8 (Compound)">
-                      6/8 (Compound)
-                    </SelectItem>
-                    <SelectItem value="7/8">7/8</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="tempo" className="text-sm font-medium">
-                  Tempo (BPM)
-                </Label>
-                <div className="flex items-center space-x-2">
-                  <Slider
-                    id="tempo"
-                    min={40}
-                    max={300}
-                    step={1}
-                    value={[displayTempo]}
-                    onValueChange={(value) => {
-                      if (!isIncreasingTempo) {
-                        setTempo(value[0]);
-                        setDisplayTempo(value[0]);
-                        setTempoInput(value[0].toString());
-                        tempoRef.current = value[0];
-                      }
-                    }}
-                    className="flex-grow"
-                    disabled={isIncreasingTempo}
-                  />
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={tempoInput}
-                    onChange={handleTempoInputChange}
-                    onBlur={handleTempoInputBlur}
-                    className="w-20"
-                    disabled={isIncreasingTempo}
+    <AudioWakeLock isPlaying={isPlaying}>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-3xl font-bold text-center">
+              DrumClick
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <Tabs defaultValue="settings" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="settings">Metronome</TabsTrigger>
+                <TabsTrigger value="advanced">Settings</TabsTrigger>
+              </TabsList>
+              <TabsContent value="settings" className="space-y-4">
+                <div>
+                  <Label htmlFor="timeSignature" className="text-sm font-medium">
+                    Time Signature
+                  </Label>
+                  <Select value={timeSignature} onValueChange={setTimeSignature}>
+                    <SelectTrigger id="timeSignature">
+                      <SelectValue placeholder="Select time signature" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="2/4">2/4</SelectItem>
+                      <SelectItem value="3/4">3/4</SelectItem>
+                      <SelectItem value="4/4">4/4</SelectItem>
+                      <SelectItem value="5/4">5/4</SelectItem>
+                      <SelectItem value="6/8">6/8</SelectItem>
+                      <SelectItem value="6/8 (Compound)">
+                        6/8 (Compound)
+                      </SelectItem>
+                      <SelectItem value="7/8">7/8</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="tempo" className="text-sm font-medium">
+                    Tempo (BPM)
+                  </Label>
+                  <div className="flex items-center space-x-2">
+                    <Slider
+                      id="tempo"
+                      min={40}
+                      max={300}
+                      step={1}
+                      value={[displayTempo]}
+                      onValueChange={(value) => {
+                        if (!isIncreasingTempo) {
+                          setTempo(value[0]);
+                          setDisplayTempo(value[0]);
+                          setTempoInput(value[0].toString());
+                          tempoRef.current = value[0];
+                        }
+                      }}
+                      className="flex-grow"
+                      disabled={isIncreasingTempo}
+                    />
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={tempoInput}
+                      onChange={handleTempoInputChange}
+                      onBlur={handleTempoInputBlur}
+                      className="w-20"
+                      disabled={isIncreasingTempo}
+                    />
+                  </div>
+                </div>
+              </TabsContent>
+              <TabsContent value="advanced" className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="accent-mode" className="text-sm font-medium">
+                    Accents
+                  </Label>
+                  <Switch
+                    id="accent-mode"
+                    checked={accentFirstBeat}
+                    onCheckedChange={setAccentFirstBeat}
                   />
                 </div>
-              </div>
-            </TabsContent>
-            <TabsContent value="advanced" className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="accent-mode" className="text-sm font-medium">
-                  Accents
-                </Label>
-                <Switch
-                  id="accent-mode"
-                  checked={accentFirstBeat}
-                  onCheckedChange={setAccentFirstBeat}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="subdivision" className="text-sm font-medium">
-                  Subdivision
-                </Label>
-                <RadioGroup
-                  id="subdivision"
-                  value={subdivision}
-                  onValueChange={(value) =>
-                    setSubdivision(value as "1" | "1/2" | "1/3" | "1/4")
-                  }
-                  className="flex space-x-2"
-                  disabled={!useClick && !useVoice}
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="1" id="r1" />
-                    <Label htmlFor="r1">1</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem
-                      value="1/2"
-                      id="r2"
-                      disabled={timeSignature === "6/8 (Compound)"}
-                    />
-                    <Label
-                      htmlFor="r2"
-                      className={
-                        timeSignature === "6/8 (Compound)"
-                          ? "text-gray-400"
-                          : ""
-                      }
-                    >
-                      1/2
-                    </Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="1/3" id="r3" />
-                    <Label htmlFor="r3">1/3</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem
-                      value="1/4"
-                      id="r4"
-                      disabled={timeSignature === "6/8 (Compound)"}
-                    />
-                    <Label
-                      htmlFor="r4"
-                      className={
-                        timeSignature === "6/8 (Compound)"
-                          ? "text-gray-400"
-                          : ""
-                      }
-                    >
-                      1/4
-                    </Label>
-                  </div>
-                </RadioGroup>
-              </div>
-              <div className="flex items-center justify-between">
-                <Label
-                  htmlFor="voice-subdivision"
-                  className="text-sm font-medium"
-                >
-                  Voice Subdivision
-                </Label>
-                <Switch
-                  id="voice-subdivision"
-                  checked={voiceSubdivision}
-                  onCheckedChange={setVoiceSubdivision}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label
-                  htmlFor="increasing-tempo"
-                  className="text-sm font-medium"
-                >
-                  Increasing Tempo
-                </Label>
-                <Switch
-                  id="increasing-tempo"
-                  checked={isIncreasingTempo}
-                  onCheckedChange={setIsIncreasingTempo}
-                />
-              </div>
-              {isIncreasingTempo && (
-                <>
-                  <div>
-                    <Label
-                      htmlFor="start-tempo"
-                      className="text-sm font-medium"
-                    >
-                      Start Tempo
-                    </Label>
-                    <Input
-                      id="start-tempo"
-                      type="number"
-                      value={startTempo}
-                      onChange={(e) => setStartTempo(Number(e.target.value))}
-                      min={40}
-                      max={300}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="end-tempo" className="text-sm font-medium">
-                      End Tempo
-                    </Label>
-                    <Input
-                      id="end-tempo"
-                      type="number"
-                      value={endTempo}
-                      onChange={(e) => setEndTempo(Number(e.target.value))}
-                      min={40}
-                      max={300}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="duration" className="text-sm font-medium">
-                      Duration (minutes)
-                    </Label>
-                    <Input
-                      id="duration"
-                      type="number"
-                      value={duration}
-                      onChange={(e) => setDuration(Number(e.target.value))}
-                      min={1}
-                      max={60}
-                    />
-                  </div>
-                </>
-              )}
-            </TabsContent>
-          </Tabs>
+                <div className="space-y-2">
+                  <Label htmlFor="subdivision" className="text-sm font-medium">
+                    Subdivision
+                  </Label>
+                  <RadioGroup
+                    id="subdivision"
+                    value={subdivision}
+                    onValueChange={(value) =>
+                      setSubdivision(value as "1" | "1/2" | "1/3" | "1/4")
+                    }
+                    className="flex space-x-2"
+                    disabled={!useClick && !useVoice}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="1" id="r1" />
+                      <Label htmlFor="r1">1</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem
+                        value="1/2"
+                        id="r2"
+                        disabled={timeSignature === "6/8 (Compound)"}
+                      />
+                      <Label
+                        htmlFor="r2"
+                        className={
+                          timeSignature === "6/8 (Compound)"
+                            ? "text-gray-400"
+                            : ""
+                        }
+                      >
+                        1/2
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="1/3" id="r3" />
+                      <Label htmlFor="r3">1/3</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem
+                        value="1/4"
+                        id="r4"
+                        disabled={timeSignature === "6/8 (Compound)"}
+                      />
+                      <Label
+                        htmlFor="r4"
+                        className={
+                          timeSignature === "6/8 (Compound)"
+                            ? "text-gray-400"
+                            : ""
+                        }
+                      >
+                        1/4
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label
+                    htmlFor="voice-subdivision"
+                    className="text-sm font-medium"
+                  >
+                    Voice Subdivision
+                  </Label>
+                  <Switch
+                    id="voice-subdivision"
+                    checked={voiceSubdivision}
+                    onCheckedChange={setVoiceSubdivision}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label
+                    htmlFor="increasing-tempo"
+                    className="text-sm font-medium"
+                  >
+                    Increasing Tempo
+                  </Label>
+                  <Switch
+                    id="increasing-tempo"
+                    checked={isIncreasingTempo}
+                    onCheckedChange={setIsIncreasingTempo}
+                  />
+                </div>
+                {isIncreasingTempo && (
+                  <>
+                    <div>
+                      <Label
+                        htmlFor="start-tempo"
+                        className="text-sm font-medium"
+                      >
+                        Start Tempo
+                      </Label>
+                      <Input
+                        id="start-tempo"
+                        type="number"
+                        value={startTempo}
+                        onChange={(e) => setStartTempo(Number(e.target.value))}
+                        min={40}
+                        max={300}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="end-tempo" className="text-sm font-medium">
+                        End Tempo
+                      </Label>
+                      <Input
+                        id="end-tempo"
+                        type="number"
+                        value={endTempo}
+                        onChange={(e) => setEndTempo(Number(e.target.value))}
+                        min={40}
+                        max={300}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="duration" className="text-sm font-medium">
+                        Duration (minutes)
+                      </Label>
+                      <Input
+                        id="duration"
+                        type="number"
+                        value={duration}
+                        onChange={(e) => setDuration(Number(e.target.value))}
+                        min={1}
+                        max={60}
+                      />
+                    </div>
+                  </>
+                )}
+              </TabsContent>
+            </Tabs>
 
-          <div className="text-center">
-            <div className="text-6xl font-bold mb-4">{displayTempo}</div>
-            <div className="flex justify-center space-x-4 py-4">
-              {renderLights()}
+            <div className="text-center">
+              <div className="text-6xl font-bold mb-4">{displayTempo}</div>
+              <div className="flex justify-center space-x-4 py-4">
+                {renderLights()}
+              </div>
             </div>
-          </div>
 
-          <div className="flex justify-between space-x-4">
-            <Button
-              variant="outline"
-              size="sm"
-              className={`flex-1 ${
-                useClick
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                  : "hover:bg-secondary"
-              }`}
-              onClick={() => toggleClickMode(!useClick)}
-            >
-              <Music className="mr-2 h-4 w-4" />
-              Click
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className={`flex-1 ${
-                useVoice
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                  : "hover:bg-secondary"
-              }`}
-              onClick={() => toggleVoiceMode(!useVoice)}
-            >
-              <Volume2 className="mr-2 h-4 w-4" />
-              Voice
-            </Button>
-          </div>
+            <div className="flex justify-between space-x-4">
+              <Button
+                variant="outline"
+                size="sm"
+                className={`flex-1 ${
+                  useClick
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                    : "hover:bg-secondary"
+                }`}
+                onClick={() => toggleClickMode(!useClick)}
+              >
+                <Music className="mr-2 h-4 w-4" />
+                Click
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className={`flex-1 ${
+                  useVoice
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                    : "hover:bg-secondary"
+                }`}
+                onClick={() => toggleVoiceMode(!useVoice)}
+              >
+                <Volume2 className="mr-2 h-4 w-4" />
+                Voice
+              </Button>
+            </div>
 
-          <Button onClick={startStop} className="w-full" size="lg">
-            {isPlaying ? (
-              <Square className="mr-2 h-4 w-4" />
-            ) : (
-              <Play className="mr-2 h-4 w-4" />
-            )}
-            {isPlaying ? "Stop" : "Play"}
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+            <Button onClick={startStop} className="w-full" size="lg">
+              {isPlaying ? (
+                <Square className="mr-2 h-4 w-4" />
+              ) : (
+                <Play className="mr-2 h-4 w-4" />
+              )}
+              {isPlaying ? "Stop" : "Play"}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    </AudioWakeLock>
   );
 }

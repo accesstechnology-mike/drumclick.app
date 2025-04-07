@@ -1,7 +1,7 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://metronome.app/sitemap.xml
+Sitemap: https://drumclick.app/sitemap.xml
 
 Disallow: /api/
 Disallow: /admin/
