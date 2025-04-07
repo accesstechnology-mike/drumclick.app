@@ -52,7 +52,8 @@ export default function ClickTrackGenerator() {
   // Add refs for background audio
   const wakeLockSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const wakeLockGainRef = useRef<GainNode | null>(null);
-  const hiddenAudioRef = useRef<HTMLAudioElement | null>(null);
+  // Remove hiddenAudioRef for HTMLAudioElement based silent audio
+  // const hiddenAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // New state variables for increasing tempo
   const [isIncreasingTempo, setIsIncreasingTempo] = useState(false);
@@ -343,171 +344,153 @@ export default function ClickTrackGenerator() {
     voiceSubdivisionRef,
   ]);
 
-  // Create a wake lock function to prevent audio from stopping
-  const createWakeLock = useCallback(() => {
+  // Create a Web Audio API wake lock function to prevent audio context from suspending
+  const createWebAudioWakeLock = useCallback(() => {
     if (!audioContextRef.current) return;
-    
-    // First, clean up any existing wake lock
+
+    // First, clean up any existing wake lock source
     if (wakeLockSourceRef.current) {
-      wakeLockSourceRef.current.stop();
+      try {
+        wakeLockSourceRef.current.stop();
+      } catch (e) { /* Ignore errors stopping already stopped node */ }
       wakeLockSourceRef.current.disconnect();
       wakeLockSourceRef.current = null;
     }
-    
-    // Create a silent buffer
+    if (wakeLockGainRef.current) {
+      wakeLockGainRef.current.disconnect();
+      wakeLockGainRef.current = null;
+    }
+
+    // Create a silent buffer (very short)
     const buffer = audioContextRef.current.createBuffer(
       1, // mono
-      audioContextRef.current.sampleRate * 2, // 2 seconds of silence
+      1, // 1 sample frame (extremely short)
       audioContextRef.current.sampleRate
     );
-    
+
     // Create a source node
     wakeLockSourceRef.current = audioContextRef.current.createBufferSource();
     wakeLockSourceRef.current.buffer = buffer;
     wakeLockSourceRef.current.loop = true; // Loop it continuously
-    
+
     // Create a gain node with zero gain (silence)
     wakeLockGainRef.current = audioContextRef.current.createGain();
-    wakeLockGainRef.current.gain.value = 0.001; // Near silence, but not completely silent
-    
+    wakeLockGainRef.current.gain.setValueAtTime(0.0, audioContextRef.current.currentTime); // Ensure it's silent
+
     // Connect the source to the gain node, and the gain node to the destination
     wakeLockSourceRef.current.connect(wakeLockGainRef.current);
     wakeLockGainRef.current.connect(audioContextRef.current.destination);
-    
+
     // Start the source node
-    wakeLockSourceRef.current.start();
-    
-    console.log('Audio wake lock created');
-  }, []);
-  
-  // Add effect to clean up wake lock
-  useEffect(() => {
-    return () => {
-      if (wakeLockSourceRef.current) {
-        wakeLockSourceRef.current.stop();
-        wakeLockSourceRef.current.disconnect();
-        wakeLockSourceRef.current = null;
-      }
-      if (wakeLockGainRef.current) {
-        wakeLockGainRef.current.disconnect();
-        wakeLockGainRef.current = null;
-      }
-    };
+    try {
+      wakeLockSourceRef.current.start();
+      console.log('Web Audio API wake lock started');
+    } catch (e) {
+      console.error('Error starting Web Audio wake lock:', e);
+    }
+
   }, []);
 
-  // Add a function to create and play a silent audio file
-  const initializeSilentAudio = useCallback(() => {
-    if (!hiddenAudioRef.current) {
-      hiddenAudioRef.current = new Audio("/silent-audio.mp3");
-      hiddenAudioRef.current.loop = true;
-      hiddenAudioRef.current.volume = 0.001;
-      
-      // Add event listeners to track and fix playback issues
-      hiddenAudioRef.current.addEventListener('pause', async () => {
-        if (isPlaying && hiddenAudioRef.current) {
-          try {
-            await hiddenAudioRef.current.play();
-          } catch (e) {
-            console.warn('Could not auto-resume silent audio:', e);
-          }
-        }
-      });
+  // Stop the Web Audio API wake lock
+  const stopWebAudioWakeLock = useCallback(() => {
+    if (wakeLockSourceRef.current) {
+      try {
+        wakeLockSourceRef.current.stop();
+         console.log('Web Audio API wake lock stopped');
+      } catch (e) { /* Ignore errors */ }
+      wakeLockSourceRef.current.disconnect();
+      wakeLockSourceRef.current = null;
     }
-    
-    // Attempt to play the silent audio
-    if (hiddenAudioRef.current) {
-      hiddenAudioRef.current.play().catch(e => {
-        console.warn('Silent audio playback failed:', e);
-      });
+    if (wakeLockGainRef.current) {
+      wakeLockGainRef.current.disconnect();
+      wakeLockGainRef.current = null;
     }
-  }, [isPlaying]);
-  
-  // Clean up the silent audio when component unmounts
-  useEffect(() => {
-    return () => {
-      if (hiddenAudioRef.current) {
-        hiddenAudioRef.current.pause();
-        hiddenAudioRef.current.src = '';
-        hiddenAudioRef.current = null;
-      }
-    };
   }, []);
 
   // Update the startStop function
-  const startStop = () => {
+  const startStop = useCallback(() => {
     if (isPlaying) {
+      // Stop logic
       if (schedulerIdRef.current) cancelAnimationFrame(schedulerIdRef.current);
       setIsPlaying(false);
       setActiveBeat(-1);
-      
-      // Clean up wake lock
-      if (wakeLockSourceRef.current) {
-        wakeLockSourceRef.current.stop();
-        wakeLockSourceRef.current.disconnect();
-        wakeLockSourceRef.current = null;
-      }
-      
-      // Stop the silent audio
-      if (hiddenAudioRef.current) {
-        hiddenAudioRef.current.pause();
-      }
-      
+      stopWebAudioWakeLock();
       if (audioContextRef.current) {
-        audioContextRef.current.close();
-        audioContextRef.current = null;
+        audioContextRef.current.close().then(() => {
+          console.log('AudioContext closed');
+          audioContextRef.current = null;
+        }).catch(e => console.error('Error closing AudioContext:', e));
+      }
+      // Update MediaSession state on manual stop
+      if ('mediaSession' in navigator) {
+          navigator.mediaSession.playbackState = 'paused';
       }
     } else {
-      // Create an audio context that will keep running in the background
+      // Start logic
       const AudioContextClass = window.AudioContext || 
         (window as WindowWithWebkitAudioContext).webkitAudioContext;
-      
-      audioContextRef.current = new AudioContextClass();
-      
-      // Set up the wake lock for background audio
-      createWakeLock();
-      
-      // Initialize the silent audio element
-      initializeSilentAudio();
-      
-      // Request permission to keep audio running in background using MediaSession API
-      if (navigator.mediaSession) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: 'DrumClick',
-          artist: 'Metronome',
-          album: 'DrumClick.app',
-        });
-        
-        navigator.mediaSession.setActionHandler('play', () => {});
-        navigator.mediaSession.setActionHandler('pause', () => {});
+      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+          audioContextRef.current = new AudioContextClass();
+          console.log('AudioContext created or recreated');
       }
       
-      loadAudioFiles();
-      const currentTime = audioContextRef.current.currentTime;
+      audioContextRef.current.resume().then(() => {
+          console.log('AudioContext resumed successfully');
+          createWebAudioWakeLock();
+          loadAudioFiles(); 
 
-      // Schedule the first beat slightly in the future
-      nextNoteTimeRef.current = currentTime + 0.1;
-      nextBeatTimeRef.current = nextNoteTimeRef.current;
-      lastUpdateTimeRef.current = currentTime;
-      currentBeatRef.current = 0;
-      setActiveBeat(0);
+          // Setup MediaSession API - Corrected Handlers
+          if ('mediaSession' in navigator) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+              title: 'DrumClick',
+              artist: 'Metronome',
+              album: 'DrumClick.app',
+            });
+            // Handlers should set state, not call startStop directly
+            navigator.mediaSession.setActionHandler('play', () => {
+                if (!isPlaying) setIsPlaying(true); // Trigger start via state change
+            });
+            navigator.mediaSession.setActionHandler('pause', () => {
+                if (isPlaying) setIsPlaying(false); // Trigger stop via state change
+            });
+            navigator.mediaSession.setActionHandler('stop', () => {
+                if (isPlaying) setIsPlaying(false); // Trigger stop via state change
+            });
+            navigator.mediaSession.playbackState = 'playing';
+          }
 
-      if (isIncreasingTempo) {
-        startTimeRef.current = currentTime;
-        tempoRef.current = startTempo;
-        setCurrentTempo(startTempo);
-      } else {
-        tempoRef.current = tempo;
-        setCurrentTempo(tempo);
-      }
+          // Schedule the first beat
+          const currentTime = audioContextRef.current!.currentTime;
+          nextNoteTimeRef.current = currentTime + 0.1;
+          nextBeatTimeRef.current = nextNoteTimeRef.current;
+          lastUpdateTimeRef.current = currentTime;
+          currentBeatRef.current = 0;
+          setActiveBeat(0);
 
-      if (timeSignature === "6/8 (Compound)") {
-        scheduleCompound68();
-      } else {
-        scheduleClick();
-      }
-      setIsPlaying(true);
+          // Set tempo
+          if (isIncreasingTempo) {
+            startTimeRef.current = currentTime;
+            tempoRef.current = startTempo;
+            setCurrentTempo(startTempo);
+          } else {
+            tempoRef.current = tempo;
+            setCurrentTempo(tempo);
+          }
+
+          // Start the scheduler
+          if (timeSignature === "6/8 (Compound)") {
+            scheduleCompound68();
+          } else {
+            scheduleClick();
+          }
+          setIsPlaying(true); // Set playing state *after* setup
+          
+      }).catch(e => {
+        console.error('Failed to resume AudioContext:', e);
+        setIsPlaying(false); 
+      });
     }
-  };
+  }, [isPlaying, stopWebAudioWakeLock, createWebAudioWakeLock, loadAudioFiles, scheduleClick, scheduleCompound68, timeSignature, isIncreasingTempo, startTempo, tempo]);
 
   useEffect(() => {
     tempoRef.current = tempo;
@@ -697,146 +680,76 @@ export default function ClickTrackGenerator() {
     }
   }, [timeSignature, subdivision]);
 
-  // Modify the visibilitychange handler
+  // Modify the visibilitychange handler - primarily for resuming context if needed
   useEffect(() => {
-    // Function to handle visibility change
     const handleVisibilityChange = async () => {
       if (!audioContextRef.current || !isPlaying) return;
-      
-      // Always try to resume the audio context when visibility state changes
-      if (audioContextRef.current.state === 'suspended') {
-        try {
-          await audioContextRef.current.resume();
-          console.log('AudioContext resumed on visibility change');
-          
-          // If our wake lock was lost, recreate it
-          if (!wakeLockSourceRef.current) {
-            createWakeLock();
+
+      if (document.visibilityState === 'hidden') {
+         // Optional: Could potentially stop the WebAudioWakeLock here to save battery,
+         // but might risk suspension. Let's leave it running for now.
+      } else if (document.visibilityState === 'visible') {
+        // When tab becomes visible, ensure context is running
+        if (audioContextRef.current.state === 'suspended') {
+          try {
+            await audioContextRef.current.resume();
+            console.log('AudioContext resumed on visibility change');
+            // Re-create wake lock just in case it got implicitly stopped
+            // (though ideally it shouldn't if context was just suspended)
+            // createWebAudioWakeLock(); 
+          } catch (error) {
+            console.error('Failed to resume AudioContext on visibility change:', error);
           }
-        } catch (error) {
-          console.error('Failed to resume AudioContext:', error);
         }
       }
     };
 
-    // Register the event listener
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    // Also listen for 'suspend' events on the AudioContext and resume if needed
-    const handleContextSuspend = async () => {
-      if (!audioContextRef.current || !isPlaying) return;
-      
-      try {
-        await audioContextRef.current.resume();
-        console.log('AudioContext resumed after suspend event');
-      } catch (error) {
-        console.error('Failed to resume AudioContext after suspend:', error);
-      }
-    };
-    
+
+    // Add listener for AudioContext state changes
+    let contextStateListener = () => {};
     if (audioContextRef.current) {
-      audioContextRef.current.onstatechange = async (event) => {
-        if (audioContextRef.current?.state === 'suspended' && isPlaying) {
-          await handleContextSuspend();
+      contextStateListener = async () => {
+        if (!audioContextRef.current) return;
+        console.log('AudioContext state changed to:', audioContextRef.current.state);
+        if (audioContextRef.current.state === 'suspended' && isPlaying) {
+          console.warn('AudioContext suspended while playing! Attempting to resume...');
+          try {
+             await audioContextRef.current.resume();
+             console.log('AudioContext resumed automatically after suspend event.');
+             // Re-ensure wake lock is running
+             // createWebAudioWakeLock();
+          } catch (error) {
+             console.error('Failed to auto-resume AudioContext after suspend event:', error);
+          }
+        } else if (audioContextRef.current.state === 'closed') {
+            console.log('AudioContext is closed.');
+            // If it closed unexpectedly while playing, stop the metronome state
+            if (isPlaying) {
+                setIsPlaying(false);
+                setActiveBeat(-1);
+                stopWebAudioWakeLock();
+                if (schedulerIdRef.current) cancelAnimationFrame(schedulerIdRef.current);
+            }
         }
       };
+      audioContextRef.current.addEventListener('statechange', contextStateListener);
     }
-    
-    // Clean up the event listeners on component unmount
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (audioContextRef.current) {
-        audioContextRef.current.onstatechange = null;
+        audioContextRef.current.removeEventListener('statechange', contextStateListener);
       }
     };
-  }, [isPlaying, createWakeLock]);
+  // We need audioContextRef.current in deps to re-attach listener if context is recreated
+  }, [isPlaying, createWebAudioWakeLock]); 
 
-  // Add a function to update MediaSession for metadata and controls
-  const updateMediaSession = useCallback(() => {
+  // Update MediaSession state
+  useEffect(() => {
     if ('mediaSession' in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: `DrumClick - ${isIncreasingTempo ? `${startTempo}-${endTempo}` : displayTempo} BPM`,
-        artist: `Time Signature: ${timeSignature}`,
-        album: 'DrumClick.app',
-        artwork: [
-          { src: '/logo.png', sizes: '512x512', type: 'image/png' },
-        ]
-      });
-
-      // Set up action handlers for media controls
-      navigator.mediaSession.setActionHandler('play', () => {
-        if (!isPlaying) {
-          // We can't call startStop directly to avoid circular dependency
-          // Instead, trigger a state change that will lead to startStop being called
-          setIsPlaying(true);
-        }
-      });
-      
-      navigator.mediaSession.setActionHandler('pause', () => {
-        if (isPlaying) {
-          setIsPlaying(false);
-        }
-      });
-      
-      navigator.mediaSession.setActionHandler('stop', () => {
-        if (isPlaying) {
-          setIsPlaying(false);
-        }
-      });
-      
-      // Update playback state
-      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+       navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
     }
-  }, [isPlaying, startTempo, endTempo, displayTempo, timeSignature, isIncreasingTempo]);
-  
-  // Call updateMediaSession when relevant states change
-  useEffect(() => {
-    updateMediaSession();
-  }, [isPlaying, timeSignature, displayTempo, updateMediaSession]);
-
-  // Add a function to interact with the service worker
-  const pingServiceWorker = useCallback(() => {
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage({
-        type: 'KEEP_ALIVE',
-        isPlaying
-      });
-    }
-  }, [isPlaying]);
-
-  // Set up regular pinging of the service worker
-  useEffect(() => {
-    if (isPlaying) {
-      // Ping the service worker immediately when playing starts
-      pingServiceWorker();
-      
-      // Set up an interval to ping the service worker
-      const pingInterval = setInterval(pingServiceWorker, 10000);
-      
-      return () => clearInterval(pingInterval);
-    }
-  }, [isPlaying, pingServiceWorker]);
-  
-  // Listen for messages from the service worker
-  useEffect(() => {
-    const handleServiceWorkerMessage = (event: MessageEvent) => {
-      if (event.data && event.data.type === 'STILL_ALIVE') {
-        console.log('Service worker is still alive');
-        
-        // If the audio context is suspended, try to resume it
-        if (isPlaying && audioContextRef.current && audioContextRef.current.state === 'suspended') {
-          audioContextRef.current.resume().catch(e => {
-            console.warn('Failed to resume audio context from service worker message:', e);
-          });
-        }
-      }
-    };
-    
-    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
-    
-    return () => {
-      navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage);
-    };
   }, [isPlaying]);
 
   return (

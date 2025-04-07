@@ -20,9 +20,8 @@ type WakeLockType = {
 
 export default function AudioWakeLock({ isPlaying, children }: AudioWakeLockProps) {
   const [wakeLock, setWakeLock] = useState<WakeLockSentinel | null>(null);
-  const [silentAudio, setSilentAudio] = useState<HTMLAudioElement | null>(null);
 
-  // Request wake lock when component mounts
+  // Request screen wake lock
   const requestWakeLock = async () => {
     try {
       if ('wakeLock' in navigator) {
@@ -30,69 +29,53 @@ export default function AudioWakeLock({ isPlaying, children }: AudioWakeLockProp
         if (wakeLockAPI) {
           const lock = await wakeLockAPI.request('screen');
           setWakeLock(lock);
-          console.log('Wake Lock is active');
+          console.log('Screen Wake Lock is active');
 
           lock.addEventListener('release', () => {
-            console.log('Wake Lock was released');
+            console.log('Screen Wake Lock was released');
             setWakeLock(null);
           });
 
           return lock;
         }
       }
-      console.log('Wake Lock API not supported');
+      console.log('Screen Wake Lock API not supported');
       return null;
     } catch (err) {
-      console.error('Wake Lock request failed:', err);
+      console.error('Screen Wake Lock request failed:', err);
       return null;
     }
   };
 
-  // Handle wake lock when playing status changes
+  // Handle screen wake lock when playing status changes
   useEffect(() => {
     let lockPromise: Promise<WakeLockSentinel | null> | null = null;
 
     if (isPlaying) {
       lockPromise = requestWakeLock();
-      
-      // Create and play silent audio to keep audio context alive in background
-      if (!silentAudio) {
-        const audio = new Audio('/silent-audio.mp3');
-        audio.loop = true;
-        audio.volume = 0.001; // Very low volume
-        setSilentAudio(audio);
-        audio.play().catch(err => console.error('Silent audio play error:', err));
-      } else {
-        silentAudio.play().catch(err => console.error('Silent audio play error:', err));
-      }
     } else {
       // Release wake lock when not playing
       if (wakeLock && !wakeLock.released) {
-        wakeLock.release().catch(err => console.error('Wake Lock release error:', err));
-      }
-      
-      // Pause silent audio
-      if (silentAudio) {
-        silentAudio.pause();
+        wakeLock.release().catch(err => console.error('Screen Wake Lock release error:', err));
       }
     }
 
-    // Clean up
+    // Clean up screen wake lock only
     return () => {
       if (lockPromise) {
         lockPromise.then(lock => {
           if (lock && !lock.released) {
-            lock.release().catch(err => console.error('Wake Lock release error:', err));
+            lock.release().catch(err => console.error('Screen Wake Lock release error:', err));
           }
         });
-      }
-      
-      if (silentAudio) {
-        silentAudio.pause();
-        silentAudio.src = '';
+      } 
+      // Ensure wake lock is released if component unmounts while playing
+      else if (wakeLock && !wakeLock.released) {
+           wakeLock.release().catch(err => console.error('Screen Wake Lock release error on unmount:', err));
       }
     };
-  }, [isPlaying]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying]); // wakeLock is intentionally omitted to prevent re-running when lock instance changes, only on isPlaying
 
   // Re-request wake lock when visibility changes (tab becomes visible again)
   useEffect(() => {
