@@ -10,17 +10,36 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Play, Square, Music, Volume2 } from "lucide-react";
+import { Play, Square, Music, Volume2, Save, List, Trash2, Plus, SkipBack, SkipForward, GripVertical, RefreshCw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import AudioWakeLock from "./AudioWakeLock";
 
 interface WindowWithWebkitAudioContext extends Window {
   webkitAudioContext?: typeof AudioContext;
+}
+
+// Playlist types
+interface PlaylistItem {
+  id: string;
+  name: string;
+  timeSignature: string;
+  tempo: number;
+  accentFirstBeat: boolean;
+  subdivision: "1" | "1/2" | "1/3" | "1/4";
+  voiceSubdivision: boolean;
+  useClick: boolean;
+  useVoice: boolean;
+  isIncreasingTempo: boolean;
+  startTempo: number;
+  endTempo: number;
+  duration: number;
+  createdAt: string;
 }
 
 export default function ClickTrackGenerator() {
@@ -67,6 +86,14 @@ export default function ClickTrackGenerator() {
 
   // Add this state variable
   const [displayTempo, setDisplayTempo] = useState(tempo);
+
+  // Playlist state
+  const [playlists, setPlaylists] = useState<PlaylistItem[]>([]);
+  const [newPlaylistName, setNewPlaylistName] = useState("");
+  const [isPlaylistDialogOpen, setIsPlaylistDialogOpen] = useState(false);
+  const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
+  const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState<number>(-1);
+  const [draggedIndex, setDraggedIndex] = useState<number>(-1);
 
   const createClickSound = useCallback((time: number, frequency: number) => {
     if (!audioContextRef.current) return;
@@ -196,6 +223,180 @@ export default function ClickTrackGenerator() {
     },
     []
   );
+
+  // Playlist management functions
+  const loadPlaylists = useCallback(() => {
+    try {
+      const saved = localStorage.getItem('drumclick-playlists');
+      if (saved) {
+        setPlaylists(JSON.parse(saved));
+      }
+    } catch (error) {
+      console.error('Error loading playlists:', error);
+    }
+  }, []);
+
+  const savePlaylists = useCallback((newPlaylists: PlaylistItem[]) => {
+    try {
+      localStorage.setItem('drumclick-playlists', JSON.stringify(newPlaylists));
+      setPlaylists(newPlaylists);
+    } catch (error) {
+      console.error('Error saving playlists:', error);
+    }
+  }, []);
+
+  const getCurrentSettings = useCallback((): Omit<PlaylistItem, 'id' | 'name' | 'createdAt'> => {
+    return {
+      timeSignature,
+      tempo,
+      accentFirstBeat,
+      subdivision,
+      voiceSubdivision,
+      useClick,
+      useVoice,
+      isIncreasingTempo,
+      startTempo,
+      endTempo,
+      duration
+    };
+  }, [timeSignature, tempo, accentFirstBeat, subdivision, voiceSubdivision, useClick, useVoice, isIncreasingTempo, startTempo, endTempo, duration]);
+
+  const saveCurrentAsPlaylist = useCallback((name: string) => {
+    const newPlaylist: PlaylistItem = {
+      id: Date.now().toString(),
+      name,
+      ...getCurrentSettings(),
+      createdAt: new Date().toISOString()
+    };
+    
+    const newPlaylists = [...playlists, newPlaylist];
+    savePlaylists(newPlaylists);
+    setNewPlaylistName("");
+    setIsSaveDialogOpen(false);
+  }, [playlists, getCurrentSettings, savePlaylists]);
+
+  const updateCurrentPlaylist = useCallback(() => {
+    if (currentPlaylistIndex < 0 || currentPlaylistIndex >= playlists.length) return;
+    
+    const updatedPlaylist: PlaylistItem = {
+      ...playlists[currentPlaylistIndex],
+      ...getCurrentSettings()
+    };
+    
+    const newPlaylists = [...playlists];
+    newPlaylists[currentPlaylistIndex] = updatedPlaylist;
+    savePlaylists(newPlaylists);
+  }, [currentPlaylistIndex, playlists, getCurrentSettings, savePlaylists]);
+
+  const loadPlaylist = useCallback((playlist: PlaylistItem, index?: number) => {
+    // Load all settings immediately - don't stop playback, let the useEffects handle the transitions
+    setTimeSignature(playlist.timeSignature);
+    setTempo(playlist.tempo);
+    setDisplayTempo(playlist.tempo);
+    setTempoInput(playlist.tempo.toString());
+    tempoRef.current = playlist.tempo;
+    timeSignatureRef.current = playlist.timeSignature;
+    setAccentFirstBeat(playlist.accentFirstBeat);
+    accentFirstBeatRef.current = playlist.accentFirstBeat;
+    setSubdivision(playlist.subdivision);
+    subdivisionRef.current = playlist.subdivision;
+    setVoiceSubdivision(playlist.voiceSubdivision);
+    voiceSubdivisionRef.current = playlist.voiceSubdivision;
+    setUseClick(playlist.useClick);
+    setUseVoice(playlist.useVoice);
+    setIsIncreasingTempo(playlist.isIncreasingTempo);
+    setStartTempo(playlist.startTempo);
+    setEndTempo(playlist.endTempo);
+    setDuration(playlist.duration);
+    
+    // Update current playlist index
+    if (index !== undefined) {
+      setCurrentPlaylistIndex(index);
+    } else {
+      // Find the index if not provided
+      const foundIndex = playlists.findIndex(p => p.id === playlist.id);
+      setCurrentPlaylistIndex(foundIndex);
+    }
+    
+    setIsPlaylistDialogOpen(false);
+
+    // If voice is enabled and audio buffers aren't loaded, load them
+    if (playlist.useVoice && audioBuffersRef.current.length === 0 && audioContextRef.current) {
+      loadAudioFiles();
+    }
+  }, [loadAudioFiles, playlists]);
+
+  const deletePlaylist = useCallback((id: string) => {
+    const newPlaylists = playlists.filter(p => p.id !== id);
+    savePlaylists(newPlaylists);
+    // Reset current index if we deleted the current playlist
+    if (currentPlaylistIndex >= newPlaylists.length) {
+      setCurrentPlaylistIndex(-1);
+    }
+  }, [playlists, savePlaylists, currentPlaylistIndex]);
+
+  const skipToNextPlaylist = useCallback(() => {
+    if (playlists.length === 0) return;
+    const nextIndex = (currentPlaylistIndex + 1) % playlists.length;
+    loadPlaylist(playlists[nextIndex], nextIndex);
+  }, [playlists, currentPlaylistIndex, loadPlaylist]);
+
+  const skipToPreviousPlaylist = useCallback(() => {
+    if (playlists.length === 0) return;
+    const prevIndex = currentPlaylistIndex <= 0 ? playlists.length - 1 : currentPlaylistIndex - 1;
+    loadPlaylist(playlists[prevIndex], prevIndex);
+  }, [playlists, currentPlaylistIndex, loadPlaylist]);
+
+  // Drag and drop handlers
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', index.toString());
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    
+    if (draggedIndex === -1 || draggedIndex === dropIndex) {
+      setDraggedIndex(-1);
+      return;
+    }
+
+    const newPlaylists = [...playlists];
+    const draggedPlaylist = newPlaylists[draggedIndex];
+    
+    // Remove the dragged item
+    newPlaylists.splice(draggedIndex, 1);
+    
+    // Insert at the new position
+    newPlaylists.splice(dropIndex, 0, draggedPlaylist);
+    
+    // Update current playlist index if necessary
+    let newCurrentIndex = currentPlaylistIndex;
+    if (currentPlaylistIndex === draggedIndex) {
+      // The current playlist was moved
+      newCurrentIndex = dropIndex;
+    } else if (currentPlaylistIndex > draggedIndex && currentPlaylistIndex <= dropIndex) {
+      // Current playlist shifted up
+      newCurrentIndex = currentPlaylistIndex - 1;
+    } else if (currentPlaylistIndex < draggedIndex && currentPlaylistIndex >= dropIndex) {
+      // Current playlist shifted down
+      newCurrentIndex = currentPlaylistIndex + 1;
+    }
+    
+    setCurrentPlaylistIndex(newCurrentIndex);
+    savePlaylists(newPlaylists);
+    setDraggedIndex(-1);
+  }, [draggedIndex, playlists, currentPlaylistIndex, savePlaylists]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedIndex(-1);
+  }, []);
 
   // Update the calculateCurrentTempo function
   const calculateCurrentTempo = useCallback(() => {
@@ -437,7 +638,11 @@ export default function ClickTrackGenerator() {
       audioContextRef.current.resume().then(() => {
           console.log('AudioContext resumed successfully');
           createWebAudioWakeLock();
-          loadAudioFiles(); 
+          
+          // Load audio files if voice is enabled
+          if (useVoice) {
+            loadAudioFiles();
+          }
 
           // Setup MediaSession API - Corrected Handlers
           if ('mediaSession' in navigator) {
@@ -624,7 +829,11 @@ export default function ClickTrackGenerator() {
 
   const toggleClickMode = useCallback((value: boolean) => {
     setUseClick(value);
-  }, []);
+    // Immediately update the ref so it takes effect during playback
+    if (isPlaying) {
+      // We need to let the useEffect handle the scheduler restart
+    }
+  }, [isPlaying]);
 
   const toggleVoiceMode = useCallback(
     (value: boolean) => {
@@ -640,24 +849,60 @@ export default function ClickTrackGenerator() {
           setUseVoice(value);
         });
       }
+      // Immediately update during playback
+      if (isPlaying) {
+        // We need to let the useEffect handle the scheduler restart
+      }
     },
-    [loadAudioFiles]
+    [loadAudioFiles, isPlaying]
   );
 
   useEffect(() => {
     if (isPlaying) {
-      // Cancel the existing scheduler
-      if (schedulerIdRef.current) {
-        cancelAnimationFrame(schedulerIdRef.current);
-      }
-      // Restart the scheduler with the new settings
-      if (timeSignature === "6/8 (Compound)") {
-        scheduleCompound68();
+      // Load audio files if voice is enabled and not loaded
+      if (useVoice && audioBuffersRef.current.length === 0 && audioContextRef.current) {
+        loadAudioFiles().then(() => {
+          // After loading, restart the scheduler
+          if (schedulerIdRef.current) {
+            cancelAnimationFrame(schedulerIdRef.current);
+          }
+          // Reset the beat to avoid audio glitches
+          const currentTime = audioContextRef.current?.currentTime;
+          if (currentTime) {
+            nextNoteTimeRef.current = currentTime + 0.1;
+            nextBeatTimeRef.current = nextNoteTimeRef.current;
+            currentBeatRef.current = 0;
+            setActiveBeat(0);
+          }
+          // Restart the scheduler with the new settings
+          if (timeSignature === "6/8 (Compound)") {
+            scheduleCompound68();
+          } else {
+            scheduleClick();
+          }
+        });
       } else {
-        scheduleClick();
+        // Cancel the existing scheduler
+        if (schedulerIdRef.current) {
+          cancelAnimationFrame(schedulerIdRef.current);
+        }
+        // Reset the beat to avoid audio glitches when toggling modes
+        const currentTime = audioContextRef.current?.currentTime;
+        if (currentTime) {
+          nextNoteTimeRef.current = currentTime + 0.1;
+          nextBeatTimeRef.current = nextNoteTimeRef.current;
+          currentBeatRef.current = 0;
+          setActiveBeat(0);
+        }
+        // Restart the scheduler with the new settings
+        if (timeSignature === "6/8 (Compound)") {
+          scheduleCompound68();
+        } else {
+          scheduleClick();
+        }
       }
     }
-  }, [useClick, useVoice, isPlaying, scheduleClick, scheduleCompound68]);
+  }, [useClick, useVoice, isPlaying, scheduleClick, scheduleCompound68, timeSignature, loadAudioFiles]);
 
   useEffect(() => {
     subdivisionRef.current = subdivision;
@@ -752,9 +997,14 @@ export default function ClickTrackGenerator() {
     }
   }, [isPlaying]);
 
+  // Load playlists on component mount
+  useEffect(() => {
+    loadPlaylists();
+  }, [loadPlaylists]);
+
   return (
     <AudioWakeLock isPlaying={isPlaying}>
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-4 relative">
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle className="text-3xl font-bold text-center">
@@ -763,9 +1013,10 @@ export default function ClickTrackGenerator() {
           </CardHeader>
           <CardContent className="space-y-6">
             <Tabs defaultValue="settings" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="settings">Metronome</TabsTrigger>
                 <TabsTrigger value="advanced">Settings</TabsTrigger>
+                <TabsTrigger value="playlists">Playlists</TabsTrigger>
               </TabsList>
               <TabsContent value="settings" className="space-y-4">
                 <div>
@@ -965,6 +1216,118 @@ export default function ClickTrackGenerator() {
                   </>
                 )}
               </TabsContent>
+              <TabsContent value="playlists" className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <Label className="text-sm font-medium">Saved Presets</Label>
+                  <div className="flex space-x-2">
+                    {/* Update button - only show when a playlist is loaded */}
+                    {currentPlaylistIndex >= 0 && currentPlaylistIndex < playlists.length && (
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={updateCurrentPlaylist}
+                      >
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Update "{playlists[currentPlaylistIndex].name}"
+                      </Button>
+                    )}
+                    
+                    {/* Save Current button - always available */}
+                    <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Save className="mr-2 h-4 w-4" />
+                          Save Current
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Save Current Settings</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="playlist-name">Preset Name</Label>
+                            <Input
+                              id="playlist-name"
+                              value={newPlaylistName}
+                              onChange={(e) => setNewPlaylistName(e.target.value)}
+                              placeholder="Enter preset name..."
+                            />
+                          </div>
+                          <div className="flex justify-end space-x-2">
+                            <Button 
+                              variant="outline" 
+                              onClick={() => setIsSaveDialogOpen(false)}
+                            >
+                              Cancel
+                            </Button>
+                            <Button 
+                              onClick={() => saveCurrentAsPlaylist(newPlaylistName)}
+                              disabled={!newPlaylistName.trim()}
+                            >
+                              Save
+                            </Button>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </div>
+                
+                {playlists.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <List className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                    <p>No saved presets yet</p>
+                    <p className="text-sm">Save your current settings to get started</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {playlists.map((playlist, index) => (
+                      <div
+                        key={playlist.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, index)}
+                        onDragOver={handleDragOver}
+                        onDrop={(e) => handleDrop(e, index)}
+                        onDragEnd={handleDragEnd}
+                        className={`flex items-center gap-2 p-3 border rounded-lg hover:bg-accent transition-all ${
+                          index === currentPlaylistIndex ? 'bg-accent border-primary' : ''
+                        } ${
+                          draggedIndex === index ? 'opacity-50 scale-95' : ''
+                        }`}
+                      >
+                        <div 
+                          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1"
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          <GripVertical className="h-4 w-4" />
+                        </div>
+                        <div 
+                          className="flex-1 cursor-pointer" 
+                          onClick={() => loadPlaylist(playlist, index)}
+                        >
+                          <div className="font-medium">{playlist.name}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {playlist.timeSignature} • {playlist.tempo} BPM
+                            {playlist.isIncreasingTempo && ` • ${playlist.startTempo}-${playlist.endTempo} BPM`}
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deletePlaylist(playlist.id);
+                          }}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
             </Tabs>
 
             <div className="text-center">
@@ -1005,12 +1368,50 @@ export default function ClickTrackGenerator() {
 
             <Button onClick={startStop} className="w-full" size="lg">
               {isPlaying ? (
-                <Square className="mr-2 h-4 w-4" />
+                <>
+                  <Square className="mr-2 h-4 w-4" />
+                  Stop
+                </>
               ) : (
-                <Play className="mr-2 h-4 w-4" />
+                <>
+                  <Play className="mr-2 h-4 w-4" />
+                  Play
+                </>
               )}
-              {isPlaying ? "Stop" : "Play"}
             </Button>
+
+            {/* Playlist navigation buttons - only show if there are playlists */}
+            {playlists.length > 0 && (
+              <div className="flex justify-center space-x-2 mt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={skipToPreviousPlaylist}
+                  className="flex-1"
+                  disabled={playlists.length <= 1}
+                >
+                  <SkipBack className="mr-2 h-4 w-4" />
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={skipToNextPlaylist}
+                  className="flex-1"
+                  disabled={playlists.length <= 1}
+                >
+                  Next
+                  <SkipForward className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            )}
+
+            {/* Show current playlist name if one is selected */}
+            {currentPlaylistIndex >= 0 && currentPlaylistIndex < playlists.length && (
+              <div className="text-center text-sm text-muted-foreground mt-2">
+                Playing: <span className="font-medium">{playlists[currentPlaylistIndex].name}</span>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
