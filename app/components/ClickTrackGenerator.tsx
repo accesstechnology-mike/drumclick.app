@@ -309,6 +309,14 @@ export default function ClickTrackGenerator() {
     setEndTempo(playlist.endTempo);
     setDuration(playlist.duration);
     
+    // Reset start time for increasing tempo when switching playlists
+    if (playlist.isIncreasingTempo && audioContextRef.current) {
+      startTimeRef.current = audioContextRef.current.currentTime;
+      // Also set the current tempo to the start tempo for immediate display
+      setCurrentTempo(playlist.startTempo);
+      tempoRef.current = playlist.startTempo;
+    }
+    
     // Update current playlist index
     if (index !== undefined) {
       setCurrentPlaylistIndex(index);
