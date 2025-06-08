@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Play, Square, Music, Volume2, Save, List, Trash2, Plus, SkipBack, SkipForward, GripVertical, RefreshCw } from "lucide-react";
+import { Play, Square, Music, Volume2, Save, List, Trash2, Plus, SkipBack, SkipForward, GripVertical, RefreshCw, Minus } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -86,6 +86,10 @@ export default function ClickTrackGenerator() {
 
   // Add this state variable
   const [displayTempo, setDisplayTempo] = useState(tempo);
+  
+  // BPM adjustment state
+  const bpmAdjustIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const bpmAdjustTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Playlist state
   const [playlists, setPlaylists] = useState<PlaylistItem[]>([]);
@@ -94,6 +98,7 @@ export default function ClickTrackGenerator() {
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState<number>(-1);
   const [draggedIndex, setDraggedIndex] = useState<number>(-1);
+  const playlistContainerRef = useRef<HTMLDivElement>(null);
 
   const createClickSound = useCallback((time: number, frequency: number) => {
     if (!audioContextRef.current) return;
@@ -106,7 +111,7 @@ export default function ClickTrackGenerator() {
 
     osc.frequency.setValueAtTime(frequency, time);
     gainNode.gain.setValueAtTime(0, time);
-    gainNode.gain.linearRampToValueAtTime(0.5, time + 0.005);
+    gainNode.gain.linearRampToValueAtTime(1.0, time + 0.005); // MAX volume for main clicks
     gainNode.gain.exponentialRampToValueAtTime(0.00001, time + 0.1);
 
     osc.start(time);
@@ -150,8 +155,8 @@ export default function ClickTrackGenerator() {
 
     source.buffer = audioBuffersRef.current[number];
 
-    // Set the gain to 0.5 (50% volume)
-    gainNode.gain.setValueAtTime(0.5, time);
+    // Set the gain to MAX volume for main voice samples
+    gainNode.gain.setValueAtTime(1.0, time);
 
     source.connect(gainNode);
     gainNode.connect(audioContextRef.current.destination);
@@ -184,7 +189,7 @@ export default function ClickTrackGenerator() {
 
       osc.frequency.setValueAtTime(frequency, time);
       gainNode.gain.setValueAtTime(0, time);
-      gainNode.gain.linearRampToValueAtTime(0.3, time + 0.005);
+      gainNode.gain.linearRampToValueAtTime(0.6, time + 0.005); // 60% volume for subdivisions
       gainNode.gain.exponentialRampToValueAtTime(0.00001, time + 0.1);
 
       osc.start(time);
@@ -213,7 +218,7 @@ export default function ClickTrackGenerator() {
         const gainNode = audioContextRef.current.createGain();
 
         source.buffer = audioBuffersRef.current[sampleIndex];
-        gainNode.gain.setValueAtTime(0.5, time);
+        gainNode.gain.setValueAtTime(0.6, time); // 60% volume for subdivision voice samples
 
         source.connect(gainNode);
         gainNode.connect(audioContextRef.current.destination);
@@ -343,17 +348,43 @@ export default function ClickTrackGenerator() {
     }
   }, [playlists, savePlaylists, currentPlaylistIndex]);
 
+  // Scroll to current playlist item
+  const scrollToCurrentPlaylist = useCallback(() => {
+    if (currentPlaylistIndex >= 0 && playlistContainerRef.current) {
+      const container = playlistContainerRef.current;
+      const items = container.children;
+      if (items[currentPlaylistIndex]) {
+        const item = items[currentPlaylistIndex] as HTMLElement;
+        const containerHeight = container.clientHeight;
+        const itemHeight = item.offsetHeight;
+        const itemTop = item.offsetTop;
+        
+        // Calculate the scroll position to center the item
+        const scrollTop = itemTop - (containerHeight / 2) + (itemHeight / 2);
+        
+        container.scrollTo({
+          top: scrollTop,
+          behavior: 'smooth'
+        });
+      }
+    }
+  }, [currentPlaylistIndex]);
+
   const skipToNextPlaylist = useCallback(() => {
     if (playlists.length === 0) return;
     const nextIndex = (currentPlaylistIndex + 1) % playlists.length;
     loadPlaylist(playlists[nextIndex], nextIndex);
-  }, [playlists, currentPlaylistIndex, loadPlaylist]);
+    // Scroll to the new playlist after a brief delay to ensure state is updated
+    setTimeout(() => scrollToCurrentPlaylist(), 100);
+  }, [playlists, currentPlaylistIndex, loadPlaylist, scrollToCurrentPlaylist]);
 
   const skipToPreviousPlaylist = useCallback(() => {
     if (playlists.length === 0) return;
     const prevIndex = currentPlaylistIndex <= 0 ? playlists.length - 1 : currentPlaylistIndex - 1;
     loadPlaylist(playlists[prevIndex], prevIndex);
-  }, [playlists, currentPlaylistIndex, loadPlaylist]);
+    // Scroll to the new playlist after a brief delay to ensure state is updated
+    setTimeout(() => scrollToCurrentPlaylist(), 100);
+  }, [playlists, currentPlaylistIndex, loadPlaylist, scrollToCurrentPlaylist]);
 
   // Drag and drop handlers
   const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
@@ -750,6 +781,8 @@ export default function ClickTrackGenerator() {
     return () => {
       if (schedulerIdRef.current) cancelAnimationFrame(schedulerIdRef.current);
       if (audioContextRef.current) audioContextRef.current.close();
+      if (bpmAdjustIntervalRef.current) clearInterval(bpmAdjustIntervalRef.current);
+      if (bpmAdjustTimeoutRef.current) clearTimeout(bpmAdjustTimeoutRef.current);
     };
   }, []);
 
@@ -799,7 +832,7 @@ export default function ClickTrackGenerator() {
     setTempoInput(value);
 
     const numericValue = parseInt(value, 10);
-    if (!isNaN(numericValue) && numericValue >= 40 && numericValue <= 300) {
+    if (!isNaN(numericValue) && numericValue >= 60 && numericValue <= 200) {
       setTempo(numericValue);
       setDisplayTempo(numericValue);
       if (!isIncreasingTempo) {
@@ -811,19 +844,19 @@ export default function ClickTrackGenerator() {
   // Update the handleTempoInputBlur function
   const handleTempoInputBlur = () => {
     const numericValue = parseInt(tempoInput, 10);
-    if (isNaN(numericValue) || numericValue < 40) {
-      setTempoInput("40");
-      setTempo(40);
-      setDisplayTempo(40);
+    if (isNaN(numericValue) || numericValue < 60) {
+      setTempoInput("60");
+      setTempo(60);
+      setDisplayTempo(60);
       if (!isIncreasingTempo) {
-        tempoRef.current = 40;
+        tempoRef.current = 60;
       }
-    } else if (numericValue > 300) {
-      setTempoInput("300");
-      setTempo(300);
-      setDisplayTempo(300);
+    } else if (numericValue > 200) {
+      setTempoInput("200");
+      setTempo(200);
+      setDisplayTempo(200);
       if (!isIncreasingTempo) {
-        tempoRef.current = 300;
+        tempoRef.current = 200;
       }
     } else {
       setTempoInput(numericValue.toString());
@@ -834,6 +867,52 @@ export default function ClickTrackGenerator() {
       }
     }
   };
+
+  // BPM adjustment functions
+  const adjustBpm = useCallback((increment: number) => {
+    setTempo(prevTempo => {
+      const newTempo = Math.max(60, Math.min(200, prevTempo + increment));
+      setDisplayTempo(newTempo);
+      setTempoInput(newTempo.toString());
+      if (!isIncreasingTempo) {
+        tempoRef.current = newTempo;
+      }
+      return newTempo;
+    });
+  }, [isIncreasingTempo]);
+
+  const stopBpmAdjustment = useCallback(() => {
+    if (bpmAdjustIntervalRef.current) {
+      clearInterval(bpmAdjustIntervalRef.current);
+      bpmAdjustIntervalRef.current = null;
+    }
+    if (bpmAdjustTimeoutRef.current) {
+      clearTimeout(bpmAdjustTimeoutRef.current);
+      bpmAdjustTimeoutRef.current = null;
+    }
+  }, []);
+
+  const startBpmAdjustment = useCallback((increment: number) => {
+    // Clear any existing intervals/timeouts
+    if (bpmAdjustIntervalRef.current) {
+      clearInterval(bpmAdjustIntervalRef.current);
+      bpmAdjustIntervalRef.current = null;
+    }
+    if (bpmAdjustTimeoutRef.current) {
+      clearTimeout(bpmAdjustTimeoutRef.current);
+      bpmAdjustTimeoutRef.current = null;
+    }
+    
+    // Immediate adjustment
+    adjustBpm(increment);
+    
+    // Start continuous adjustment after delay
+    bpmAdjustTimeoutRef.current = setTimeout(() => {
+      bpmAdjustIntervalRef.current = setInterval(() => {
+        adjustBpm(increment);
+      }, 100); // Adjust every 100ms during hold
+    }, 500); // Start continuous after 500ms hold
+  }, [adjustBpm]);
 
   const toggleClickMode = useCallback((value: boolean) => {
     setUseClick(value);
@@ -1012,21 +1091,22 @@ export default function ClickTrackGenerator() {
 
   return (
     <AudioWakeLock isPlaying={isPlaying}>
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-4 relative">
-        <Card className="w-full max-w-md">
+      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-4 relative">
+        <Card className="w-full max-w-md h-[calc(100vh-2rem)] flex flex-col">
           <CardHeader>
             <CardTitle className="text-3xl font-bold text-center">
               DrumClick
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <Tabs defaultValue="settings" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="settings">Metronome</TabsTrigger>
-                <TabsTrigger value="advanced">Settings</TabsTrigger>
-                <TabsTrigger value="playlists">Playlists</TabsTrigger>
-              </TabsList>
-              <TabsContent value="settings" className="space-y-4">
+          <CardContent className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-hidden">
+              <Tabs defaultValue="settings" className="w-full h-full flex flex-col">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="settings">Metronome</TabsTrigger>
+                  <TabsTrigger value="advanced">Settings</TabsTrigger>
+                  <TabsTrigger value="playlists">Playlists</TabsTrigger>
+                </TabsList>
+              <TabsContent value="settings" className="space-y-3 overflow-y-auto">
                 <div>
                   <Label htmlFor="timeSignature" className="text-sm font-medium">
                     Time Signature
@@ -1055,8 +1135,8 @@ export default function ClickTrackGenerator() {
                   <div className="flex items-center space-x-2">
                     <Slider
                       id="tempo"
-                      min={40}
-                      max={300}
+                      min={60}
+                      max={200}
                       step={1}
                       value={[displayTempo]}
                       onValueChange={(value) => {
@@ -1079,11 +1159,13 @@ export default function ClickTrackGenerator() {
                       onBlur={handleTempoInputBlur}
                       className="w-20"
                       disabled={isIncreasingTempo}
+                      min={60}
+                      max={200}
                     />
                   </div>
                 </div>
               </TabsContent>
-              <TabsContent value="advanced" className="space-y-4">
+              <TabsContent value="advanced" className="space-y-3 overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="accent-mode" className="text-sm font-medium">
                     Accents
@@ -1178,53 +1260,114 @@ export default function ClickTrackGenerator() {
                   />
                 </div>
                 {isIncreasingTempo && (
-                  <>
+                  <div className="space-y-3">
                     <div>
-                      <Label
-                        htmlFor="start-tempo"
-                        className="text-sm font-medium"
-                      >
-                        Start Tempo
-                      </Label>
-                      <Input
-                        id="start-tempo"
-                        type="number"
-                        value={startTempo}
-                        onChange={(e) => setStartTempo(Number(e.target.value))}
-                        min={40}
-                        max={300}
-                      />
+                      <Label className="text-sm font-medium">Start Tempo</Label>
+                      <div className="flex items-center space-x-2">
+                        <Slider
+                          min={60}
+                          max={200}
+                          step={1}
+                          value={[startTempo]}
+                          onValueChange={(value) => setStartTempo(value[0])}
+                          className="flex-1"
+                        />
+                        <div className="flex items-center space-x-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            onClick={() => setStartTempo(Math.max(60, startTempo - 1))}
+                            disabled={startTempo <= 60}
+                          >
+                            <Minus className="h-3 w-3" />
+                          </Button>
+                          <Input
+                            type="number"
+                            value={startTempo}
+                            onChange={(e) => setStartTempo(Math.max(60, Math.min(200, Number(e.target.value))))}
+                            className="w-12 text-center text-xs h-6"
+                            min={60}
+                            max={200}
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            onClick={() => setStartTempo(Math.min(200, startTempo + 1))}
+                            disabled={startTempo >= 200}
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                     <div>
-                      <Label htmlFor="end-tempo" className="text-sm font-medium">
-                        End Tempo
-                      </Label>
-                      <Input
-                        id="end-tempo"
-                        type="number"
-                        value={endTempo}
-                        onChange={(e) => setEndTempo(Number(e.target.value))}
-                        min={40}
-                        max={300}
-                      />
+                      <Label className="text-sm font-medium">End Tempo</Label>
+                      <div className="flex items-center space-x-2">
+                        <Slider
+                          min={60}
+                          max={200}
+                          step={1}
+                          value={[endTempo]}
+                          onValueChange={(value) => setEndTempo(value[0])}
+                          className="flex-1"
+                        />
+                        <div className="flex items-center space-x-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            onClick={() => setEndTempo(Math.max(60, endTempo - 1))}
+                            disabled={endTempo <= 60}
+                          >
+                            <Minus className="h-3 w-3" />
+                          </Button>
+                          <Input
+                            type="number"
+                            value={endTempo}
+                            onChange={(e) => setEndTempo(Math.max(60, Math.min(200, Number(e.target.value))))}
+                            className="w-12 text-center text-xs h-6"
+                            min={60}
+                            max={200}
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            onClick={() => setEndTempo(Math.min(200, endTempo + 1))}
+                            disabled={endTempo >= 200}
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                     <div>
-                      <Label htmlFor="duration" className="text-sm font-medium">
-                        Duration (minutes)
-                      </Label>
-                      <Input
-                        id="duration"
-                        type="number"
-                        value={duration}
-                        onChange={(e) => setDuration(Number(e.target.value))}
-                        min={1}
-                        max={60}
-                      />
+                      <Label className="text-sm font-medium">Duration (minutes)</Label>
+                      <div className="flex items-center space-x-2">
+                        <Slider
+                          min={1}
+                          max={60}
+                          step={1}
+                          value={[duration]}
+                          onValueChange={(value) => setDuration(value[0])}
+                          className="flex-1"
+                        />
+                        <Input
+                          type="number"
+                          value={duration}
+                          onChange={(e) => setDuration(Math.max(1, Math.min(60, Number(e.target.value))))}
+                          className="w-12 text-center text-xs h-6"
+                          min={1}
+                          max={60}
+                        />
+                      </div>
                     </div>
-                  </>
+                  </div>
                 )}
               </TabsContent>
-              <TabsContent value="playlists" className="space-y-4">
+              <TabsContent value="playlists" className="space-y-3 flex-1 flex flex-col overflow-hidden">
                 <div className="flex justify-between items-center">
                   <Label className="text-sm font-medium">Saved Presets</Label>
                   <div className="flex space-x-2">
@@ -1289,7 +1432,7 @@ export default function ClickTrackGenerator() {
                     <p className="text-sm">Save your current settings to get started</p>
                   </div>
                 ) : (
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                  <div ref={playlistContainerRef} className="space-y-1 flex-1 overflow-y-auto">
                     {playlists.map((playlist, index) => (
                       <div
                         key={playlist.id}
@@ -1298,24 +1441,29 @@ export default function ClickTrackGenerator() {
                         onDragOver={handleDragOver}
                         onDrop={(e) => handleDrop(e, index)}
                         onDragEnd={handleDragEnd}
-                        className={`flex items-center gap-2 p-3 border rounded-lg hover:bg-accent transition-all ${
+                        className={`flex items-center gap-2 p-2 border rounded hover:bg-accent transition-all ${
                           index === currentPlaylistIndex ? 'bg-accent border-primary' : ''
                         } ${
                           draggedIndex === index ? 'opacity-50 scale-95' : ''
                         }`}
                       >
                         <div 
-                          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1"
+                          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-0.5"
                           onMouseDown={(e) => e.stopPropagation()}
                         >
-                          <GripVertical className="h-4 w-4" />
+                          <GripVertical className="h-3 w-3" />
                         </div>
                         <div 
-                          className="flex-1 cursor-pointer" 
+                          className="flex-1 cursor-pointer min-w-0" 
                           onClick={() => loadPlaylist(playlist, index)}
                         >
-                          <div className="font-medium">{playlist.name}</div>
-                          <div className="text-sm text-muted-foreground">
+                          <div className="flex items-center gap-1">
+                            <div className="font-medium text-sm truncate">{playlist.name}</div>
+                            {index === currentPlaylistIndex && (
+                              <Play className="h-3 w-3 text-primary flex-shrink-0" />
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
                             {playlist.timeSignature} • {playlist.tempo} BPM
                             {playlist.isIncreasingTempo && ` • ${playlist.startTempo}-${playlist.endTempo} BPM`}
                           </div>
@@ -1327,99 +1475,126 @@ export default function ClickTrackGenerator() {
                             e.stopPropagation();
                             deletePlaylist(playlist.id);
                           }}
-                          className="text-destructive hover:text-destructive"
+                          className="text-destructive hover:text-destructive h-6 w-6 p-0"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
                     ))}
                   </div>
                 )}
+                
+                {/* Playlist navigation buttons - only show if there are playlists */}
+                {playlists.length > 0 && (
+                  <div className="flex justify-center space-x-2 mt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={skipToPreviousPlaylist}
+                      className="flex-1"
+                      disabled={playlists.length <= 1}
+                    >
+                      <SkipBack className="mr-2 h-4 w-4" />
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={skipToNextPlaylist}
+                      className="flex-1"
+                      disabled={playlists.length <= 1}
+                    >
+                      Next
+                      <SkipForward className="ml-2 h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+
+
               </TabsContent>
             </Tabs>
+            </div>
 
-            <div className="text-center">
-              <div className="text-6xl font-bold mb-4">{displayTempo}</div>
+            <div className="text-center border-t pt-4 bg-white space-y-4">
+              <div className="flex items-center justify-center space-x-6">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="h-16 w-16 p-0"
+                  onMouseDown={() => startBpmAdjustment(-1)}
+                  onMouseUp={stopBpmAdjustment}
+                  onMouseLeave={stopBpmAdjustment}
+                  onTouchStart={() => startBpmAdjustment(-1)}
+                  onTouchEnd={stopBpmAdjustment}
+                  disabled={displayTempo <= 60 || isIncreasingTempo}
+                >
+                  <Minus className="h-8 w-8" />
+                </Button>
+                <div className="text-6xl font-bold w-32 text-center">{displayTempo}</div>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="h-16 w-16 p-0"
+                  onMouseDown={() => startBpmAdjustment(1)}
+                  onMouseUp={stopBpmAdjustment}
+                  onMouseLeave={stopBpmAdjustment}
+                  onTouchStart={() => startBpmAdjustment(1)}
+                  onTouchEnd={stopBpmAdjustment}
+                  disabled={displayTempo >= 200 || isIncreasingTempo}
+                >
+                  <Plus className="h-8 w-8" />
+                </Button>
+              </div>
+              
               <div className="flex justify-center space-x-4 py-4">
                 {renderLights()}
               </div>
-            </div>
 
-            <div className="flex justify-between space-x-4">
-              <Button
-                variant="outline"
-                size="sm"
-                className={`flex-1 ${
-                  useClick
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                    : "hover:bg-secondary"
-                }`}
-                onClick={() => toggleClickMode(!useClick)}
-              >
-                <Music className="mr-2 h-4 w-4" />
-                Click
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className={`flex-1 ${
-                  useVoice
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                    : "hover:bg-secondary"
-                }`}
-                onClick={() => toggleVoiceMode(!useVoice)}
-              >
-                <Volume2 className="mr-2 h-4 w-4" />
-                Voice
-              </Button>
-            </div>
-
-            <Button onClick={startStop} className="w-full" size="lg">
-              {isPlaying ? (
-                <>
-                  <Square className="mr-2 h-4 w-4" />
-                  Stop
-                </>
-              ) : (
-                <>
-                  <Play className="mr-2 h-4 w-4" />
-                  Play
-                </>
-              )}
-            </Button>
-
-            {/* Playlist navigation buttons - only show if there are playlists */}
-            {playlists.length > 0 && (
-              <div className="flex justify-center space-x-2 mt-3">
+              <div className="flex justify-between space-x-4">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={skipToPreviousPlaylist}
-                  className="flex-1"
-                  disabled={playlists.length <= 1}
+                  className={`flex-1 ${
+                    useClick
+                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                      : "hover:bg-secondary"
+                  }`}
+                  onClick={() => toggleClickMode(!useClick)}
                 >
-                  <SkipBack className="mr-2 h-4 w-4" />
-                  Previous
+                  <Music className="mr-2 h-4 w-4" />
+                  Click
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={skipToNextPlaylist}
-                  className="flex-1"
-                  disabled={playlists.length <= 1}
+                  className={`flex-1 ${
+                    useVoice
+                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                      : "hover:bg-secondary"
+                  }`}
+                  onClick={() => toggleVoiceMode(!useVoice)}
                 >
-                  Next
-                  <SkipForward className="ml-2 h-4 w-4" />
+                  <Volume2 className="mr-2 h-4 w-4" />
+                  Voice
                 </Button>
               </div>
-            )}
 
-            {/* Show current playlist name if one is selected */}
-            {currentPlaylistIndex >= 0 && currentPlaylistIndex < playlists.length && (
-              <div className="text-center text-sm text-muted-foreground mt-2">
-                Playing: <span className="font-medium">{playlists[currentPlaylistIndex].name}</span>
-              </div>
-            )}
+              <Button onClick={startStop} className="w-full" size="lg">
+                {isPlaying ? (
+                  <>
+                    <Square className="mr-2 h-4 w-4" />
+                    Stop
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-2 h-4 w-4" />
+                    Play
+                  </>
+                )}
+              </Button>
+            </div>
+
+
           </CardContent>
         </Card>
       </div>

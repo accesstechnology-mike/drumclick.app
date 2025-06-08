@@ -19,7 +19,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "DrumClick.app | Professional Click Track Generator for Drummers",
+  title: "DrumClick.app | Click Tracks for Drummers",
   description:
     "Advanced metronome and click track generator designed specifically for drummers. Improve your timing, practice complex rhythms, and perfect your beats with our professional-grade tool.",
   keywords:
@@ -38,6 +38,15 @@ export const metadata: Metadata = {
     images: [
       {
         url: "https://drumclick.app/images/og.webp",
+        width: 1200,
+        height: 630,
+        alt: "DrumClick.app - Professional Click Track Generator for Drummers",
+      },
+      {
+        url: "https://drumclick.app/images/og.png",
+        width: 1200,
+        height: 630,
+        alt: "DrumClick.app - Professional Click Track Generator for Drummers",
       },
     ],
     locale: "en_US",
@@ -77,7 +86,14 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="DrumClick" />
-        <link rel="apple-touch-icon" href="/logo.png" />
+        
+        {/* Favicon links */}
+        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+        <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+        <link rel="shortcut icon" href="/favicon-32x32.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
         <Script
           id="structured-data"
           type="application/ld+json"
