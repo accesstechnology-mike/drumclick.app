@@ -123,6 +123,7 @@ export default function ClickTrackGenerator() {
   const [flashApp, setFlashApp] = useState(false);
   const [appFlashing, setAppFlashing] = useState(false);
   const [flashColor, setFlashColor] = useState<'yellow' | 'green'>('green');
+  const [showLogo, setShowLogo] = useState(true);
 
   // Flash trigger function
   const triggerAppFlash = useCallback((isAccented: boolean = false) => {
@@ -137,6 +138,22 @@ export default function ClickTrackGenerator() {
       setAppFlashing(false);
     }, flashDuration);
   }, [flashApp]);
+
+  // Handle window height changes to show/hide logo
+  useEffect(() => {
+    const handleResize = () => {
+      setShowLogo(window.innerHeight >= 650);
+    };
+
+    // Set initial value
+    handleResize();
+
+    // Add event listener
+    window.addEventListener('resize', handleResize);
+
+    // Cleanup
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const createClickSound = useCallback((time: number, frequency: number) => {
     if (!audioContextRef.current) return;
@@ -1328,14 +1345,16 @@ export default function ClickTrackGenerator() {
                 </TabsList>
               <TabsContent value="settings" className="space-y-4">
 
-                                         {/* Logo */}
-              <div className="flex justify-center py-2">
-                <img 
-                  src="/images/DrumClick_logo.png" 
-                  alt="DrumClick Logo" 
-                  className="h-48 w-auto"
-                />
-              </div>
+                                         {/* Logo - hide on short screens to prioritize time signature */}
+              {showLogo && (
+                <div className="flex justify-center py-2">
+                  <img 
+                    src="/images/DrumClick_logo.png" 
+                    alt="DrumClick Logo" 
+                    className="h-48 w-auto"
+                  />
+                </div>
+              )}
                 <div>
                   <Label htmlFor="timeSignature" className="text-lg font-medium text-center block">
                     Time Signature
