@@ -1323,6 +1323,24 @@ export default function ClickTrackGenerator() {
     setIsHydrated(true);
   }, []);
 
+  // Handle spacebar toggle
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check if spacebar was pressed and not in an input field
+      if (event.code === 'Space' && !isEditingMainDisplay) {
+        // Prevent default space behavior (scrolling)
+        event.preventDefault();
+        startStop();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [startStop, isEditingMainDisplay]);
+
   if (!isHydrated) {
     return (
       <div className="min-h-[100svh] max-h-[100svh] flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-2 sm:p-4">
