@@ -95,6 +95,18 @@ export default function ClickTrackGenerator() {
   const bpmAdjustIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const bpmAdjustTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Start tempo adjustment state
+  const startTempoAdjustIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const startTempoAdjustTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // End tempo adjustment state
+  const endTempoAdjustIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const endTempoAdjustTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Duration adjustment state
+  const durationAdjustIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const durationAdjustTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Add state for editing the main BPM display
   const [isEditingMainDisplay, setIsEditingMainDisplay] = useState(false);
   const [mainDisplayInput, setMainDisplayInput] = useState(tempo.toString());
@@ -958,6 +970,111 @@ export default function ClickTrackGenerator() {
     }, 500); // Start continuous after 500ms hold
   }, [adjustBpm]);
 
+  // Start tempo adjustment functions
+  const adjustStartTempo = useCallback((increment: number) => {
+    setStartTempo(prevTempo => Math.max(60, Math.min(200, prevTempo + increment)));
+  }, []);
+
+  const startStartTempoAdjustment = useCallback((increment: number) => {
+    if (startTempoAdjustIntervalRef.current) {
+      clearInterval(startTempoAdjustIntervalRef.current);
+      startTempoAdjustIntervalRef.current = null;
+    }
+    if (startTempoAdjustTimeoutRef.current) {
+      clearTimeout(startTempoAdjustTimeoutRef.current);
+      startTempoAdjustTimeoutRef.current = null;
+    }
+    
+    adjustStartTempo(increment);
+    
+    startTempoAdjustTimeoutRef.current = setTimeout(() => {
+      startTempoAdjustIntervalRef.current = setInterval(() => {
+        adjustStartTempo(increment);
+      }, 100);
+    }, 500);
+  }, [adjustStartTempo]);
+
+  const stopStartTempoAdjustment = useCallback(() => {
+    if (startTempoAdjustIntervalRef.current) {
+      clearInterval(startTempoAdjustIntervalRef.current);
+      startTempoAdjustIntervalRef.current = null;
+    }
+    if (startTempoAdjustTimeoutRef.current) {
+      clearTimeout(startTempoAdjustTimeoutRef.current);
+      startTempoAdjustTimeoutRef.current = null;
+    }
+  }, []);
+
+  // End tempo adjustment functions
+  const adjustEndTempo = useCallback((increment: number) => {
+    setEndTempo(prevTempo => Math.max(60, Math.min(200, prevTempo + increment)));
+  }, []);
+
+  const startEndTempoAdjustment = useCallback((increment: number) => {
+    if (endTempoAdjustIntervalRef.current) {
+      clearInterval(endTempoAdjustIntervalRef.current);
+      endTempoAdjustIntervalRef.current = null;
+    }
+    if (endTempoAdjustTimeoutRef.current) {
+      clearTimeout(endTempoAdjustTimeoutRef.current);
+      endTempoAdjustTimeoutRef.current = null;
+    }
+    
+    adjustEndTempo(increment);
+    
+    endTempoAdjustTimeoutRef.current = setTimeout(() => {
+      endTempoAdjustIntervalRef.current = setInterval(() => {
+        adjustEndTempo(increment);
+      }, 100);
+    }, 500);
+  }, [adjustEndTempo]);
+
+  const stopEndTempoAdjustment = useCallback(() => {
+    if (endTempoAdjustIntervalRef.current) {
+      clearInterval(endTempoAdjustIntervalRef.current);
+      endTempoAdjustIntervalRef.current = null;
+    }
+    if (endTempoAdjustTimeoutRef.current) {
+      clearTimeout(endTempoAdjustTimeoutRef.current);
+      endTempoAdjustTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Duration adjustment functions
+  const adjustDuration = useCallback((increment: number) => {
+    setDuration(prevDuration => Math.max(1, Math.min(60, prevDuration + increment)));
+  }, []);
+
+  const startDurationAdjustment = useCallback((increment: number) => {
+    if (durationAdjustIntervalRef.current) {
+      clearInterval(durationAdjustIntervalRef.current);
+      durationAdjustIntervalRef.current = null;
+    }
+    if (durationAdjustTimeoutRef.current) {
+      clearTimeout(durationAdjustTimeoutRef.current);
+      durationAdjustTimeoutRef.current = null;
+    }
+    
+    adjustDuration(increment);
+    
+    durationAdjustTimeoutRef.current = setTimeout(() => {
+      durationAdjustIntervalRef.current = setInterval(() => {
+        adjustDuration(increment);
+      }, 100);
+    }, 500);
+  }, [adjustDuration]);
+
+  const stopDurationAdjustment = useCallback(() => {
+    if (durationAdjustIntervalRef.current) {
+      clearInterval(durationAdjustIntervalRef.current);
+      durationAdjustIntervalRef.current = null;
+    }
+    if (durationAdjustTimeoutRef.current) {
+      clearTimeout(durationAdjustTimeoutRef.current);
+      durationAdjustTimeoutRef.current = null;
+    }
+  }, []);
+
   const toggleClickMode = useCallback((value: boolean) => {
     setUseClick(value);
     // Immediately update the ref so it takes effect during playback
@@ -1192,7 +1309,12 @@ export default function ClickTrackGenerator() {
         )}
         <Card className="w-full max-w-md h-[calc(100dvh-2rem)] flex flex-col">
                       <CardHeader>
-              <CardTitle className="text-3xl font-bold text-center">
+              <CardTitle className="text-3xl font-bold text-center flex items-center justify-center gap-2">
+                <img 
+                  src="/images/DrumClick_logo.png" 
+                  alt="DrumClick Logo" 
+                  className="h-8 w-auto"
+                />
                 DrumClick
               </CardTitle>
             </CardHeader>
@@ -1239,32 +1361,33 @@ export default function ClickTrackGenerator() {
      
 
               </TabsContent>
-              <TabsContent value="advanced" className="space-y-3 overflow-y-auto">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="accent-mode" className="text-sm font-medium">
+              <TabsContent value="advanced" className="space-y-4 overflow-y-auto px-2">
+                <div className="flex items-center justify-between py-1">
+                  <Label htmlFor="accent-mode" className="text-lg font-medium">
                     Accents
                   </Label>
                   <Switch
                     id="accent-mode"
                     checked={accentFirstBeat}
                     onCheckedChange={setAccentFirstBeat}
+                    className="scale-125"
                   />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="subdivision" className="text-sm font-medium">
+                    <Label htmlFor="subdivision" className="text-lg font-medium">
                       Subdivision
                     </Label>
                     {subdivision === "1/3" && (
                       <div className="flex items-center space-x-2">
-                        <Label htmlFor="swing-inline" className="text-xs text-muted-foreground">
+                        <Label htmlFor="swing-inline" className="text-sm text-muted-foreground">
                           Swing
                         </Label>
                         <Switch
                           id="swing-inline"
                           checked={swingMode}
                           onCheckedChange={setSwingMode}
-                          className="scale-75"
+                          className="scale-90"
                         />
                       </div>
                     )}
@@ -1273,83 +1396,87 @@ export default function ClickTrackGenerator() {
                     id="subdivision"
                     value={subdivision}
                     onValueChange={(value) => setSubdivision(value as "1" | "1/2" | "1/3" | "1/4")}
-                    className="flex space-x-2"
+                    className="flex justify-between"
                     disabled={!useClick && !useVoice}
                   >
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-1">
                       <RadioGroupItem 
                         value="1" 
                         id="r1"
                         disabled={timeSignature === "6/8 (Compound)"}
+                        className="scale-110"
                       />
                       <Label 
                         htmlFor="r1"
-                        className={
+                        className={`text-base cursor-pointer ${
                           timeSignature === "6/8 (Compound)"
                             ? "text-gray-400"
                             : ""
-                        }
+                        }`}
                       >
                         1
                       </Label>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-1">
                       <RadioGroupItem
                         value="1/2"
                         id="r2"
                         disabled={timeSignature === "6/8 (Compound)"}
+                        className="scale-110"
                       />
                       <Label
                         htmlFor="r2"
-                        className={
+                        className={`text-base cursor-pointer ${
                           timeSignature === "6/8 (Compound)"
                             ? "text-gray-400"
                             : ""
-                        }
+                        }`}
                       >
                         1/2
                       </Label>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-1">
                       <RadioGroupItem 
                         value="1/3" 
                         id="r3"
                         disabled={timeSignature === "6/8 (Compound)"}
+                        className="scale-110"
                       />
                       <Label 
                         htmlFor="r3"
-                        className={
+                        className={`text-base cursor-pointer ${
                           timeSignature === "6/8 (Compound)"
                             ? "text-gray-400"
                             : ""
-                        }
+                        }`}
                       >
                         1/3
                       </Label>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-1">
                       <RadioGroupItem
                         value="1/4"
                         id="r4"
                         disabled={timeSignature === "6/8 (Compound)"}
+                        className="scale-110"
                       />
                       <Label
                         htmlFor="r4"
-                        className={
+                        className={`text-base cursor-pointer ${
                           timeSignature === "6/8 (Compound)"
                             ? "text-gray-400"
                             : ""
-                        }
+                        }`}
                       >
                         1/4
                       </Label>
                     </div>
                   </RadioGroup>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between py-1">
                   <Label
                     htmlFor="voice-subdivision"
-                    className="text-sm font-medium"
+                    className="text-lg font-medium"
                   >
                     Voice Subdivision
                   </Label>
@@ -1357,12 +1484,13 @@ export default function ClickTrackGenerator() {
                     id="voice-subdivision"
                     checked={voiceSubdivision}
                     onCheckedChange={setVoiceSubdivision}
+                    className="scale-125"
                   />
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between py-1">
                   <Label
                     htmlFor="flash-app"
-                    className="text-sm font-medium"
+                    className="text-lg font-medium"
                   >
                     Flash App
                   </Label>
@@ -1370,12 +1498,13 @@ export default function ClickTrackGenerator() {
                     id="flash-app"
                     checked={flashApp}
                     onCheckedChange={setFlashApp}
+                    className="scale-125"
                   />
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between py-1">
                   <Label
                     htmlFor="increasing-tempo"
-                    className="text-sm font-medium"
+                    className="text-lg font-medium"
                   >
                     Increasing Tempo
                   </Label>
@@ -1383,13 +1512,14 @@ export default function ClickTrackGenerator() {
                     id="increasing-tempo"
                     checked={isIncreasingTempo}
                     onCheckedChange={setIsIncreasingTempo}
+                    className="scale-125"
                   />
                 </div>
                 {isIncreasingTempo && (
-                  <div className="space-y-3">
+                  <div className="space-y-3 bg-gray-50 p-3 rounded-lg">
                     <div>
-                      <Label className="text-sm font-medium">Start Tempo</Label>
-                      <div className="flex items-center space-x-2">
+                      <Label className="text-lg font-medium block mb-1">Start Tempo</Label>
+                      <div className="flex items-center space-x-3">
                         <Slider
                           min={60}
                           max={200}
@@ -1398,39 +1528,47 @@ export default function ClickTrackGenerator() {
                           onValueChange={(value) => setStartTempo(value[0])}
                           className="flex-1"
                         />
-                        <div className="flex items-center space-x-1">
+                        <div className="flex items-center space-x-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-6 w-6 p-0"
-                            onClick={() => setStartTempo(Math.max(60, startTempo - 1))}
+                            className="h-10 w-10 p-0"
+                            onMouseDown={() => startStartTempoAdjustment(-1)}
+                            onMouseUp={stopStartTempoAdjustment}
+                            onMouseLeave={stopStartTempoAdjustment}
+                            onTouchStart={() => startStartTempoAdjustment(-1)}
+                            onTouchEnd={stopStartTempoAdjustment}
                             disabled={startTempo <= 60}
                           >
-                            <Minus className="h-3 w-3" />
+                            <Minus className="h-4 w-4" />
                           </Button>
                           <Input
                             type="number"
                             value={startTempo}
                             onChange={(e) => setStartTempo(Math.max(60, Math.min(200, Number(e.target.value))))}
-                            className="w-12 text-center text-xs h-6"
+                            className="w-16 text-center text-sm h-10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             min={60}
                             max={200}
                           />
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-6 w-6 p-0"
-                            onClick={() => setStartTempo(Math.min(200, startTempo + 1))}
+                            className="h-10 w-10 p-0"
+                            onMouseDown={() => startStartTempoAdjustment(1)}
+                            onMouseUp={stopStartTempoAdjustment}
+                            onMouseLeave={stopStartTempoAdjustment}
+                            onTouchStart={() => startStartTempoAdjustment(1)}
+                            onTouchEnd={stopStartTempoAdjustment}
                             disabled={startTempo >= 200}
                           >
-                            <Plus className="h-3 w-3" />
+                            <Plus className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
                     </div>
                     <div>
-                      <Label className="text-sm font-medium">End Tempo</Label>
-                      <div className="flex items-center space-x-2">
+                      <Label className="text-lg font-medium block mb-1">End Tempo</Label>
+                      <div className="flex items-center space-x-3">
                         <Slider
                           min={60}
                           max={200}
@@ -1439,39 +1577,47 @@ export default function ClickTrackGenerator() {
                           onValueChange={(value) => setEndTempo(value[0])}
                           className="flex-1"
                         />
-                        <div className="flex items-center space-x-1">
+                        <div className="flex items-center space-x-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-6 w-6 p-0"
-                            onClick={() => setEndTempo(Math.max(60, endTempo - 1))}
+                            className="h-10 w-10 p-0"
+                            onMouseDown={() => startEndTempoAdjustment(-1)}
+                            onMouseUp={stopEndTempoAdjustment}
+                            onMouseLeave={stopEndTempoAdjustment}
+                            onTouchStart={() => startEndTempoAdjustment(-1)}
+                            onTouchEnd={stopEndTempoAdjustment}
                             disabled={endTempo <= 60}
                           >
-                            <Minus className="h-3 w-3" />
+                            <Minus className="h-4 w-4" />
                           </Button>
                           <Input
                             type="number"
                             value={endTempo}
                             onChange={(e) => setEndTempo(Math.max(60, Math.min(200, Number(e.target.value))))}
-                            className="w-12 text-center text-xs h-6"
+                            className="w-16 text-center text-sm h-10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             min={60}
                             max={200}
                           />
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-6 w-6 p-0"
-                            onClick={() => setEndTempo(Math.min(200, endTempo + 1))}
+                            className="h-10 w-10 p-0"
+                            onMouseDown={() => startEndTempoAdjustment(1)}
+                            onMouseUp={stopEndTempoAdjustment}
+                            onMouseLeave={stopEndTempoAdjustment}
+                            onTouchStart={() => startEndTempoAdjustment(1)}
+                            onTouchEnd={stopEndTempoAdjustment}
                             disabled={endTempo >= 200}
                           >
-                            <Plus className="h-3 w-3" />
+                            <Plus className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
                     </div>
                     <div>
-                      <Label className="text-sm font-medium">Duration (minutes)</Label>
-                      <div className="flex items-center space-x-2">
+                      <Label className="text-lg font-medium block mb-1">Duration (minutes)</Label>
+                      <div className="flex items-center space-x-3">
                         <Slider
                           min={1}
                           max={60}
@@ -1480,14 +1626,42 @@ export default function ClickTrackGenerator() {
                           onValueChange={(value) => setDuration(value[0])}
                           className="flex-1"
                         />
-                        <Input
-                          type="number"
-                          value={duration}
-                          onChange={(e) => setDuration(Math.max(1, Math.min(60, Number(e.target.value))))}
-                          className="w-12 text-center text-xs h-6"
-                          min={1}
-                          max={60}
-                        />
+                        <div className="flex items-center space-x-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-10 w-10 p-0"
+                            onMouseDown={() => startDurationAdjustment(-1)}
+                            onMouseUp={stopDurationAdjustment}
+                            onMouseLeave={stopDurationAdjustment}
+                            onTouchStart={() => startDurationAdjustment(-1)}
+                            onTouchEnd={stopDurationAdjustment}
+                            disabled={duration <= 1}
+                          >
+                            <Minus className="h-4 w-4" />
+                          </Button>
+                          <Input
+                            type="number"
+                            value={duration}
+                            onChange={(e) => setDuration(Math.max(1, Math.min(60, Number(e.target.value))))}
+                            className="w-16 text-center text-sm h-10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            min={1}
+                            max={60}
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-10 w-10 p-0"
+                            onMouseDown={() => startDurationAdjustment(1)}
+                            onMouseUp={stopDurationAdjustment}
+                            onMouseLeave={stopDurationAdjustment}
+                            onTouchStart={() => startDurationAdjustment(1)}
+                            onTouchEnd={stopDurationAdjustment}
+                            disabled={duration >= 60}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
