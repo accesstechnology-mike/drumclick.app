@@ -40,6 +40,7 @@ interface PlaylistItem {
   startTempo: number;
   endTempo: number;
   duration: number;
+  flashApp: boolean;
   createdAt: string;
 }
 
@@ -94,6 +95,11 @@ export default function ClickTrackGenerator() {
   const bpmAdjustIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const bpmAdjustTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Add state for editing the main BPM display
+  const [isEditingMainDisplay, setIsEditingMainDisplay] = useState(false);
+  const [mainDisplayInput, setMainDisplayInput] = useState(tempo.toString());
+  const mainDisplayInputRef = useRef<HTMLInputElement>(null);
+
   // Playlist state
   const [playlists, setPlaylists] = useState<PlaylistItem[]>([]);
   const [newPlaylistName, setNewPlaylistName] = useState("");
@@ -102,6 +108,23 @@ export default function ClickTrackGenerator() {
   const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState<number>(-1);
   const [draggedIndex, setDraggedIndex] = useState<number>(-1);
   const playlistContainerRef = useRef<HTMLDivElement>(null);
+  const [flashApp, setFlashApp] = useState(false);
+  const [appFlashing, setAppFlashing] = useState(false);
+  const [flashColor, setFlashColor] = useState<'yellow' | 'green'>('green');
+
+  // Flash trigger function
+  const triggerAppFlash = useCallback((isAccented: boolean = false) => {
+    if (!flashApp) return;
+    
+    setFlashColor(isAccented ? 'yellow' : 'green');
+    setAppFlashing(true);
+    // Flash duration: longer for accented beats, shorter for regular beats
+    const flashDuration = isAccented ? 150 : 125;
+    
+    setTimeout(() => {
+      setAppFlashing(false);
+    }, flashDuration);
+  }, [flashApp]);
 
   const createClickSound = useCallback((time: number, frequency: number) => {
     if (!audioContextRef.current) return;
@@ -276,9 +299,10 @@ export default function ClickTrackGenerator() {
       isIncreasingTempo,
       startTempo,
       endTempo,
-      duration
+      duration,
+      flashApp
     };
-  }, [timeSignature, tempo, accentFirstBeat, subdivision, voiceSubdivision, swingMode, useClick, useVoice, isIncreasingTempo, startTempo, endTempo, duration]);
+  }, [timeSignature, tempo, accentFirstBeat, subdivision, voiceSubdivision, swingMode, useClick, useVoice, isIncreasingTempo, startTempo, endTempo, duration, flashApp]);
 
   const saveCurrentAsPlaylist = useCallback((name: string) => {
     const newPlaylist: PlaylistItem = {
@@ -329,6 +353,7 @@ export default function ClickTrackGenerator() {
     setStartTempo(playlist.startTempo);
     setEndTempo(playlist.endTempo);
     setDuration(playlist.duration);
+    setFlashApp(playlist.flashApp || false);
     
     // Reset start time for increasing tempo when switching playlists
     if (playlist.isIncreasingTempo && audioContextRef.current) {
@@ -502,6 +527,7 @@ export default function ClickTrackGenerator() {
 
         if (currentTime - lastUpdateTimeRef.current >= 1 / 60) {
           setActiveBeat(beatInMeasure);
+          triggerAppFlash(beatInMeasure === 0 && accentFirstBeatRef.current);
           lastUpdateTimeRef.current = currentTime;
         }
 
@@ -512,7 +538,7 @@ export default function ClickTrackGenerator() {
       nextNoteTimeRef.current += 60.0 / tempoRef.current;
     }
     schedulerIdRef.current = requestAnimationFrame(scheduleCompound68);
-  }, [createClickSound, playVoice, playSubdivision, useClick, useVoice]);
+  }, [createClickSound, playVoice, playSubdivision, useClick, useVoice, triggerAppFlash]);
 
   // Update the scheduleClick function
   const scheduleClick = useCallback(() => {
@@ -577,6 +603,7 @@ export default function ClickTrackGenerator() {
         if (subBeat === 0) {
           if (currentTime - lastUpdateTimeRef.current >= 1 / 60) {
             setActiveBeat(beatInMeasure);
+            triggerAppFlash(isAccentedBeat);
             lastUpdateTimeRef.current = currentTime;
           }
         }
@@ -598,6 +625,7 @@ export default function ClickTrackGenerator() {
     useVoice,
     calculateCurrentTempo,
     voiceSubdivisionRef,
+    triggerAppFlash,
   ]);
 
   // Create a Web Audio API wake lock function to prevent audio context from suspending
@@ -960,6 +988,54 @@ export default function ClickTrackGenerator() {
     [loadAudioFiles, isPlaying]
   );
 
+  // Add handlers for main display editing
+  const handleMainDisplayClick = useCallback(() => {
+    if (!isIncreasingTempo) {
+      setIsEditingMainDisplay(true);
+      setMainDisplayInput(displayTempo.toString());
+      // Focus the input after it renders
+      setTimeout(() => {
+        mainDisplayInputRef.current?.focus();
+        mainDisplayInputRef.current?.select();
+      }, 0);
+    }
+  }, [displayTempo, isIncreasingTempo]);
+
+  const handleMainDisplayInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setMainDisplayInput(e.target.value);
+  }, []);
+
+  const handleMainDisplaySubmit = useCallback(() => {
+    const numericValue = parseInt(mainDisplayInput, 10);
+    if (!isNaN(numericValue)) {
+      const clampedValue = Math.max(60, Math.min(200, numericValue));
+      setTempo(clampedValue);
+      setDisplayTempo(clampedValue);
+      setTempoInput(clampedValue.toString());
+      setMainDisplayInput(clampedValue.toString());
+      if (!isIncreasingTempo) {
+        tempoRef.current = clampedValue;
+      }
+    } else {
+      // Reset to current display tempo if invalid input
+      setMainDisplayInput(displayTempo.toString());
+    }
+    setIsEditingMainDisplay(false);
+  }, [mainDisplayInput, displayTempo, isIncreasingTempo]);
+
+  const handleMainDisplayKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleMainDisplaySubmit();
+    } else if (e.key === 'Escape') {
+      setMainDisplayInput(displayTempo.toString());
+      setIsEditingMainDisplay(false);
+    }
+  }, [handleMainDisplaySubmit, displayTempo]);
+
+  const handleMainDisplayBlur = useCallback(() => {
+    handleMainDisplaySubmit();
+  }, [handleMainDisplaySubmit]);
+
   useEffect(() => {
     if (isPlaying) {
       // Load audio files if voice is enabled and not loaded
@@ -1018,6 +1094,13 @@ export default function ClickTrackGenerator() {
   useEffect(() => {
     swingModeRef.current = swingMode;
   }, [swingMode]);
+
+  // Keep mainDisplayInput in sync with displayTempo
+  useEffect(() => {
+    if (!isEditingMainDisplay) {
+      setMainDisplayInput(displayTempo.toString());
+    }
+  }, [displayTempo, isEditingMainDisplay]);
 
 
 
@@ -1101,12 +1184,18 @@ export default function ClickTrackGenerator() {
   return (
     <AudioWakeLock isPlaying={isPlaying}>
       <div className="h-[100dvh] flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-4 relative">
+        {/* Flash overlay */}
+        {appFlashing && (
+          <div className={`fixed inset-0 opacity-90 z-50 pointer-events-none transition-opacity duration-100 ${
+            flashColor === 'yellow' ? 'bg-yellow-400' : 'bg-green-500'
+          }`} />
+        )}
         <Card className="w-full max-w-md h-[calc(100dvh-2rem)] flex flex-col">
-          <CardHeader>
-            <CardTitle className="text-3xl font-bold text-center">
-              DrumClick
-            </CardTitle>
-          </CardHeader>
+                      <CardHeader>
+              <CardTitle className="text-3xl font-bold text-center">
+                DrumClick
+              </CardTitle>
+            </CardHeader>
           <CardContent className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-hidden">
               <Tabs defaultValue="settings" className="w-full h-full flex flex-col">
@@ -1115,64 +1204,40 @@ export default function ClickTrackGenerator() {
                   <TabsTrigger value="advanced">Settings</TabsTrigger>
                   <TabsTrigger value="playlists">Playlists</TabsTrigger>
                 </TabsList>
-              <TabsContent value="settings" className="space-y-3 overflow-y-auto">
+              <TabsContent value="settings" className="space-y-4">
+
+                                         {/* Logo */}
+              <div className="flex justify-center py-2">
+                <img 
+                  src="/images/DrumClick_logo.png" 
+                  alt="DrumClick Logo" 
+                  className="h-48 w-auto"
+                />
+              </div>
                 <div>
-                  <Label htmlFor="timeSignature" className="text-sm font-medium">
+                  <Label htmlFor="timeSignature" className="text-lg font-medium text-center block">
                     Time Signature
                   </Label>
                   <Select value={timeSignature} onValueChange={setTimeSignature}>
-                    <SelectTrigger id="timeSignature" className="focus:ring-0 focus:ring-offset-0">
+                    <SelectTrigger id="timeSignature" className="focus:ring-0 focus:ring-offset-0 h-12 text-lg">
                       <SelectValue placeholder="Select time signature" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="2/4">2/4</SelectItem>
-                      <SelectItem value="3/4">3/4</SelectItem>
-                      <SelectItem value="4/4">4/4</SelectItem>
-                      <SelectItem value="5/4">5/4</SelectItem>
-                      <SelectItem value="6/8">6/8</SelectItem>
-                      <SelectItem value="6/8 (Compound)">
+                      <SelectItem value="2/4" className="h-12 text-lg">2/4</SelectItem>
+                      <SelectItem value="3/4" className="h-12 text-lg">3/4</SelectItem>
+                      <SelectItem value="4/4" className="h-12 text-lg">4/4</SelectItem>
+                      <SelectItem value="5/4" className="h-12 text-lg">5/4</SelectItem>
+                      <SelectItem value="6/8" className="h-12 text-lg">6/8</SelectItem>
+                      <SelectItem value="6/8 (Compound)" className="h-12 text-lg">
                         6/8 (Compound)
                       </SelectItem>
-                      <SelectItem value="7/8">7/8</SelectItem>
+                      <SelectItem value="7/8" className="h-12 text-lg">7/8</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label htmlFor="tempo" className="text-sm font-medium">
-                    Tempo (BPM)
-                  </Label>
-                  <div className="flex items-center space-x-2">
-                    <Slider
-                      id="tempo"
-                      min={60}
-                      max={200}
-                      step={1}
-                      value={[displayTempo]}
-                      onValueChange={(value) => {
-                        if (!isIncreasingTempo) {
-                          setTempo(value[0]);
-                          setDisplayTempo(value[0]);
-                          setTempoInput(value[0].toString());
-                          tempoRef.current = value[0];
-                        }
-                      }}
-                      className="flex-grow"
-                      disabled={isIncreasingTempo}
-                    />
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={tempoInput}
-                      onChange={handleTempoInputChange}
-                      onBlur={handleTempoInputBlur}
-                      className="w-20"
-                      disabled={isIncreasingTempo}
-                      min={60}
-                      max={200}
-                    />
-                  </div>
-                </div>
+
+     
+
               </TabsContent>
               <TabsContent value="advanced" className="space-y-3 overflow-y-auto">
                 <div className="flex items-center justify-between">
@@ -1292,6 +1357,19 @@ export default function ClickTrackGenerator() {
                     id="voice-subdivision"
                     checked={voiceSubdivision}
                     onCheckedChange={setVoiceSubdivision}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label
+                    htmlFor="flash-app"
+                    className="text-sm font-medium"
+                  >
+                    Flash App
+                  </Label>
+                  <Switch
+                    id="flash-app"
+                    checked={flashApp}
+                    onCheckedChange={setFlashApp}
                   />
                 </div>
                 <div className="flex items-center justify-between">
@@ -1564,6 +1642,32 @@ export default function ClickTrackGenerator() {
             </div>
 
             <div className="text-center border-t pt-4 bg-white space-y-4">
+              {/* Tempo Slider - visible on all screens */}
+              <div className="px-4">
+                <Label htmlFor="tempo-slider" className="text-lg font-medium block mb-2">
+                  Tempo (BPM)
+                </Label>
+                <Slider
+                  id="tempo-slider"
+                  min={60}
+                  max={200}
+                  step={1}
+                  value={[displayTempo]}
+                  onValueChange={(value) => {
+                    if (!isIncreasingTempo) {
+                      setTempo(value[0]);
+                      setDisplayTempo(value[0]);
+                      setTempoInput(value[0].toString());
+                      tempoRef.current = value[0];
+                    }
+                  }}
+                  className="w-full"
+                  disabled={isIncreasingTempo}
+                />
+              </div>
+
+
+              
               <div className="flex items-center justify-center space-x-6">
                 <Button
                   variant="outline"
@@ -1578,7 +1682,32 @@ export default function ClickTrackGenerator() {
                 >
                   <Minus className="h-8 w-8" />
                 </Button>
-                <div className="text-6xl font-bold w-32 text-center">{displayTempo}</div>
+                                 {isEditingMainDisplay ? (
+                   <input
+                     ref={mainDisplayInputRef}
+                     type="text"
+                     inputMode="numeric"
+                     pattern="[0-9]*"
+                     value={mainDisplayInput}
+                     onChange={handleMainDisplayInputChange}
+                     onBlur={handleMainDisplayBlur}
+                     onKeyDown={handleMainDisplayKeyDown}
+                     className="text-6xl font-bold w-32 h-20 text-center bg-transparent border-none outline-none"
+                     disabled={isIncreasingTempo}
+                   />
+                 ) : (
+                   <div 
+                     className={`text-6xl font-bold w-32 h-20 text-center flex items-center justify-center transition-colors ${
+                       isIncreasingTempo 
+                         ? 'cursor-default' 
+                         : 'cursor-pointer hover:bg-gray-100 rounded-lg'
+                     }`}
+                     onClick={handleMainDisplayClick}
+                     title={isIncreasingTempo ? "Cannot edit during increasing tempo mode" : "Click to edit"}
+                   >
+                     {displayTempo}
+                   </div>
+                 )}
                 <Button
                   variant="outline"
                   size="lg"
