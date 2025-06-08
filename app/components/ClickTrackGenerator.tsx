@@ -1,23 +1,17 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Play, Square, Music, Volume2, Save, List, Trash2, Plus, SkipBack, SkipForward, GripVertical, RefreshCw, Minus } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Music, Volume2, Plus, Minus, Save, SkipBack, SkipForward, RefreshCw, Trash2, GripVertical, List, Play, Square } from "lucide-react";
 import AudioWakeLock from "./AudioWakeLock";
 
 interface WindowWithWebkitAudioContext extends Window {
@@ -45,6 +39,7 @@ interface PlaylistItem {
 }
 
 export default function ClickTrackGenerator() {
+  const [isHydrated, setIsHydrated] = useState(false);
   const [timeSignature, setTimeSignature] = useState("4/4");
   const [tempo, setTempo] = useState(120);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -334,6 +329,8 @@ export default function ClickTrackGenerator() {
   }, [timeSignature, tempo, accentFirstBeat, subdivision, voiceSubdivision, swingMode, useClick, useVoice, isIncreasingTempo, startTempo, endTempo, duration, flashApp]);
 
   const saveCurrentAsPlaylist = useCallback((name: string) => {
+    if (!isHydrated) return;
+    
     const newPlaylist: PlaylistItem = {
       id: Date.now().toString(),
       name,
@@ -345,7 +342,7 @@ export default function ClickTrackGenerator() {
     savePlaylists(newPlaylists);
     setNewPlaylistName("");
     setIsSaveDialogOpen(false);
-  }, [playlists, getCurrentSettings, savePlaylists]);
+  }, [playlists, getCurrentSettings, savePlaylists, isHydrated]);
 
   const updateCurrentPlaylist = useCallback(() => {
     if (currentPlaylistIndex < 0 || currentPlaylistIndex >= playlists.length) return;
@@ -810,15 +807,22 @@ export default function ClickTrackGenerator() {
   }, [isPlaying, stopWebAudioWakeLock, createWebAudioWakeLock, loadAudioFiles, scheduleClick, scheduleCompound68, timeSignature, isIncreasingTempo, startTempo, tempo]);
 
   useEffect(() => {
-    tempoRef.current = tempo;
+    const prevTimeSignature = timeSignatureRef.current;
     timeSignatureRef.current = timeSignature;
     accentFirstBeatRef.current = accentFirstBeat;
-    setTempoInput(tempo.toString());
 
     if (isPlaying) {
-      // Reset the current beat when time signature changes
-      currentBeatRef.current = 0;
-      setActiveBeat(0);
+      const shouldResetBeat = prevTimeSignature !== timeSignature;
+
+      if (shouldResetBeat) {
+        if (audioContextRef.current) {
+          const currentTime = audioContextRef.current.currentTime;
+          currentBeatRef.current = 0;
+          setActiveBeat(0);
+          nextNoteTimeRef.current = currentTime + 0.1;
+          nextBeatTimeRef.current = nextNoteTimeRef.current;
+        }
+      }
 
       // Cancel the existing scheduler
       if (schedulerIdRef.current) {
@@ -831,24 +835,14 @@ export default function ClickTrackGenerator() {
       } else {
         scheduleClick();
       }
-
-      // Adjust nextBeatTimeRef when tempo changes
-      if (tempoRef.current !== tempo) {
-        const currentTime = audioContextRef.current!.currentTime;
-        const timeSinceLastBeat = currentTime - nextBeatTimeRef.current;
-        const newBeatDuration = 60.0 / tempo;
-        nextBeatTimeRef.current =
-          currentTime + newBeatDuration - timeSinceLastBeat;
-      }
     }
-  }, [
-    tempo,
-    timeSignature,
-    accentFirstBeat,
-    isPlaying,
-    scheduleClick,
-    scheduleCompound68,
-  ]);
+  }, [timeSignature, accentFirstBeat, isPlaying, scheduleClick, scheduleCompound68]);
+
+  useEffect(() => {
+    // Simply update the tempo ref - the scheduler will pick up the new tempo automatically
+    tempoRef.current = tempo;
+    setTempoInput(tempo.toString());
+  }, [tempo]);
 
   useEffect(() => {
     return () => {
@@ -948,7 +942,7 @@ export default function ClickTrackGenerator() {
       setDisplayTempo(newTempo);
       setTempoInput(newTempo.toString());
       if (!isIncreasingTempo) {
-        tempoRef.current = newTempo;
+        tempoRef.current = newTempo; // Update immediately for smooth transition
       }
       return newTempo;
     });
@@ -1175,39 +1169,19 @@ export default function ClickTrackGenerator() {
       // Load audio files if voice is enabled and not loaded
       if (useVoice && audioBuffersRef.current.length === 0 && audioContextRef.current) {
         loadAudioFiles().then(() => {
-          // After loading, restart the scheduler
+          // After loading, restart the scheduler without resetting beat
           if (schedulerIdRef.current) {
             cancelAnimationFrame(schedulerIdRef.current);
           }
-          // Reset the beat to avoid audio glitches
-          const currentTime = audioContextRef.current?.currentTime;
-          if (currentTime) {
-            nextNoteTimeRef.current = currentTime + 0.1;
-            nextBeatTimeRef.current = nextNoteTimeRef.current;
-            currentBeatRef.current = 0;
-            setActiveBeat(0);
-          }
-          // Restart the scheduler with the new settings
           if (timeSignature === "6/8 (Compound)") {
             scheduleCompound68();
           } else {
             scheduleClick();
           }
         });
-      } else {
-        // Cancel the existing scheduler
-        if (schedulerIdRef.current) {
-          cancelAnimationFrame(schedulerIdRef.current);
-        }
-        // Reset the beat to avoid audio glitches when toggling modes
-        const currentTime = audioContextRef.current?.currentTime;
-        if (currentTime) {
-          nextNoteTimeRef.current = currentTime + 0.1;
-          nextBeatTimeRef.current = nextNoteTimeRef.current;
-          currentBeatRef.current = 0;
-          setActiveBeat(0);
-        }
-        // Restart the scheduler with the new settings
+      } else if (schedulerIdRef.current) {
+        // Restart scheduler for any other change without resetting beat
+        cancelAnimationFrame(schedulerIdRef.current);
         if (timeSignature === "6/8 (Compound)") {
           scheduleCompound68();
         } else {
@@ -1219,15 +1193,42 @@ export default function ClickTrackGenerator() {
 
   useEffect(() => {
     subdivisionRef.current = subdivision;
-  }, [subdivision]);
+    if (isPlaying && schedulerIdRef.current) {
+      // Restart scheduler without resetting beat position
+      cancelAnimationFrame(schedulerIdRef.current);
+      if (timeSignature === "6/8 (Compound)") {
+        scheduleCompound68();
+      } else {
+        scheduleClick();
+      }
+    }
+  }, [subdivision, isPlaying, scheduleClick, scheduleCompound68, timeSignature]);
 
   useEffect(() => {
     voiceSubdivisionRef.current = voiceSubdivision;
-  }, [voiceSubdivision]);
+    if (isPlaying && schedulerIdRef.current) {
+      // Restart scheduler without resetting beat position
+      cancelAnimationFrame(schedulerIdRef.current);
+      if (timeSignature === "6/8 (Compound)") {
+        scheduleCompound68();
+      } else {
+        scheduleClick();
+      }
+    }
+  }, [voiceSubdivision, isPlaying, scheduleClick, scheduleCompound68, timeSignature]);
 
   useEffect(() => {
     swingModeRef.current = swingMode;
-  }, [swingMode]);
+    if (isPlaying && schedulerIdRef.current) {
+      // Restart scheduler without resetting beat position
+      cancelAnimationFrame(schedulerIdRef.current);
+      if (timeSignature === "6/8 (Compound)") {
+        scheduleCompound68();
+      } else {
+        scheduleClick();
+      }
+    }
+  }, [swingMode, isPlaying, scheduleClick, scheduleCompound68, timeSignature]);
 
   // Keep mainDisplayInput in sync with displayTempo
   useEffect(() => {
@@ -1312,8 +1313,37 @@ export default function ClickTrackGenerator() {
 
   // Load playlists on component mount
   useEffect(() => {
-    loadPlaylists();
-  }, [loadPlaylists]);
+    if (isHydrated) {
+      loadPlaylists();
+    }
+  }, [loadPlaylists, isHydrated]);
+
+  // Handle hydration
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
+  if (!isHydrated) {
+    return (
+      <div className="min-h-[100svh] max-h-[100svh] flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-2 sm:p-4">
+        <Card className="w-full max-w-md h-[calc(100svh-1rem)] sm:h-[calc(100svh-2rem)] flex flex-col overflow-hidden">
+          <CardHeader className="py-3 sm:py-6">
+            <CardTitle className="text-2xl sm:text-3xl font-bold text-center flex items-center justify-center gap-2">
+              <img 
+                src="/images/DrumClick_logo.png" 
+                alt="DrumClick Logo" 
+                className="h-6 sm:h-8 w-auto"
+              />
+              DrumClick
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 flex items-center justify-center">
+            <div className="text-center">Loading...</div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <AudioWakeLock isPlaying={isPlaying}>
