@@ -1019,18 +1019,7 @@ export default function ClickTrackGenerator() {
     swingModeRef.current = swingMode;
   }, [swingMode]);
 
-  // Add this useEffect near your other useEffect hooks
-  useEffect(() => {
-    if (timeSignature === "6/8 (Compound)") {
-      if (subdivision === "1/2" || subdivision === "1/4") {
-        setSubdivision("1/3");
-      }
-    } else if (timeSignature === "6/8") {
-      if (subdivision === "1/3") {
-        setSubdivision("1/2");
-      }
-    }
-  }, [timeSignature, subdivision]);
+
 
   // Modify the visibilitychange handler - primarily for resuming context if needed
   useEffect(() => {
@@ -1132,7 +1121,7 @@ export default function ClickTrackGenerator() {
                     Time Signature
                   </Label>
                   <Select value={timeSignature} onValueChange={setTimeSignature}>
-                    <SelectTrigger id="timeSignature">
+                    <SelectTrigger id="timeSignature" className="focus:ring-0 focus:ring-offset-0">
                       <SelectValue placeholder="Select time signature" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1218,9 +1207,7 @@ export default function ClickTrackGenerator() {
                   <RadioGroup
                     id="subdivision"
                     value={subdivision}
-                    onValueChange={(value) =>
-                      setSubdivision(value as "1" | "1/2" | "1/3" | "1/4")
-                    }
+                    onValueChange={(value) => setSubdivision(value as "1" | "1/2" | "1/3" | "1/4")}
                     className="flex space-x-2"
                     disabled={!useClick && !useVoice}
                   >
