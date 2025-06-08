@@ -957,9 +957,26 @@ export default function ClickTrackGenerator() {
       clearTimeout(bpmAdjustTimeoutRef.current);
       bpmAdjustTimeoutRef.current = null;
     }
+    // Reset touch state after a delay to allow for proper event handling
+    setTimeout(() => {
+      isTouchActiveRef.current = false;
+    }, 100);
   }, []);
 
-  const startBpmAdjustment = useCallback((increment: number) => {
+  // Add refs to track touch vs mouse state
+  const isTouchActiveRef = useRef(false);
+  const touchStartTimeRef = useRef(0);
+
+  const startBpmAdjustment = useCallback((increment: number, isTouchEvent = false) => {
+    // Prevent duplicate events on touch devices
+    if (isTouchEvent) {
+      isTouchActiveRef.current = true;
+      touchStartTimeRef.current = Date.now();
+    } else if (isTouchActiveRef.current && Date.now() - touchStartTimeRef.current < 300) {
+      // Skip mouse event if touch event happened recently
+      return;
+    }
+
     // Clear any existing intervals/timeouts
     if (bpmAdjustIntervalRef.current) {
       clearInterval(bpmAdjustIntervalRef.current);
@@ -973,12 +990,15 @@ export default function ClickTrackGenerator() {
     // Immediate adjustment
     adjustBpm(increment);
     
-    // Start continuous adjustment after delay
+    // Start continuous adjustment after delay - longer delay for touch
+    const holdDelay = isTouchEvent ? 700 : 500;
+    const repeatInterval = isTouchEvent ? 150 : 100;
+    
     bpmAdjustTimeoutRef.current = setTimeout(() => {
       bpmAdjustIntervalRef.current = setInterval(() => {
         adjustBpm(increment);
-      }, 100); // Adjust every 100ms during hold
-    }, 500); // Start continuous after 500ms hold
+      }, repeatInterval);
+    }, holdDelay);
   }, [adjustBpm]);
 
   // Start tempo adjustment functions
@@ -986,7 +1006,15 @@ export default function ClickTrackGenerator() {
     setStartTempo(prevTempo => Math.max(60, Math.min(200, prevTempo + increment)));
   }, []);
 
-  const startStartTempoAdjustment = useCallback((increment: number) => {
+  const startStartTempoAdjustment = useCallback((increment: number, isTouchEvent = false) => {
+    // Prevent duplicate events on touch devices
+    if (isTouchEvent) {
+      isTouchActiveRef.current = true;
+      touchStartTimeRef.current = Date.now();
+    } else if (isTouchActiveRef.current && Date.now() - touchStartTimeRef.current < 300) {
+      return;
+    }
+
     if (startTempoAdjustIntervalRef.current) {
       clearInterval(startTempoAdjustIntervalRef.current);
       startTempoAdjustIntervalRef.current = null;
@@ -998,11 +1026,14 @@ export default function ClickTrackGenerator() {
     
     adjustStartTempo(increment);
     
+    const holdDelay = isTouchEvent ? 700 : 500;
+    const repeatInterval = isTouchEvent ? 150 : 100;
+    
     startTempoAdjustTimeoutRef.current = setTimeout(() => {
       startTempoAdjustIntervalRef.current = setInterval(() => {
         adjustStartTempo(increment);
-      }, 100);
-    }, 500);
+      }, repeatInterval);
+    }, holdDelay);
   }, [adjustStartTempo]);
 
   const stopStartTempoAdjustment = useCallback(() => {
@@ -1014,6 +1045,9 @@ export default function ClickTrackGenerator() {
       clearTimeout(startTempoAdjustTimeoutRef.current);
       startTempoAdjustTimeoutRef.current = null;
     }
+    setTimeout(() => {
+      isTouchActiveRef.current = false;
+    }, 100);
   }, []);
 
   // End tempo adjustment functions
@@ -1021,7 +1055,15 @@ export default function ClickTrackGenerator() {
     setEndTempo(prevTempo => Math.max(60, Math.min(200, prevTempo + increment)));
   }, []);
 
-  const startEndTempoAdjustment = useCallback((increment: number) => {
+  const startEndTempoAdjustment = useCallback((increment: number, isTouchEvent = false) => {
+    // Prevent duplicate events on touch devices
+    if (isTouchEvent) {
+      isTouchActiveRef.current = true;
+      touchStartTimeRef.current = Date.now();
+    } else if (isTouchActiveRef.current && Date.now() - touchStartTimeRef.current < 300) {
+      return;
+    }
+
     if (endTempoAdjustIntervalRef.current) {
       clearInterval(endTempoAdjustIntervalRef.current);
       endTempoAdjustIntervalRef.current = null;
@@ -1033,11 +1075,14 @@ export default function ClickTrackGenerator() {
     
     adjustEndTempo(increment);
     
+    const holdDelay = isTouchEvent ? 700 : 500;
+    const repeatInterval = isTouchEvent ? 150 : 100;
+    
     endTempoAdjustTimeoutRef.current = setTimeout(() => {
       endTempoAdjustIntervalRef.current = setInterval(() => {
         adjustEndTempo(increment);
-      }, 100);
-    }, 500);
+      }, repeatInterval);
+    }, holdDelay);
   }, [adjustEndTempo]);
 
   const stopEndTempoAdjustment = useCallback(() => {
@@ -1049,6 +1094,9 @@ export default function ClickTrackGenerator() {
       clearTimeout(endTempoAdjustTimeoutRef.current);
       endTempoAdjustTimeoutRef.current = null;
     }
+    setTimeout(() => {
+      isTouchActiveRef.current = false;
+    }, 100);
   }, []);
 
   // Duration adjustment functions
@@ -1056,7 +1104,15 @@ export default function ClickTrackGenerator() {
     setDuration(prevDuration => Math.max(1, Math.min(60, prevDuration + increment)));
   }, []);
 
-  const startDurationAdjustment = useCallback((increment: number) => {
+  const startDurationAdjustment = useCallback((increment: number, isTouchEvent = false) => {
+    // Prevent duplicate events on touch devices
+    if (isTouchEvent) {
+      isTouchActiveRef.current = true;
+      touchStartTimeRef.current = Date.now();
+    } else if (isTouchActiveRef.current && Date.now() - touchStartTimeRef.current < 300) {
+      return;
+    }
+
     if (durationAdjustIntervalRef.current) {
       clearInterval(durationAdjustIntervalRef.current);
       durationAdjustIntervalRef.current = null;
@@ -1068,11 +1124,14 @@ export default function ClickTrackGenerator() {
     
     adjustDuration(increment);
     
+    const holdDelay = isTouchEvent ? 700 : 500;
+    const repeatInterval = isTouchEvent ? 150 : 100;
+    
     durationAdjustTimeoutRef.current = setTimeout(() => {
       durationAdjustIntervalRef.current = setInterval(() => {
         adjustDuration(increment);
-      }, 100);
-    }, 500);
+      }, repeatInterval);
+    }, holdDelay);
   }, [adjustDuration]);
 
   const stopDurationAdjustment = useCallback(() => {
@@ -1084,6 +1143,9 @@ export default function ClickTrackGenerator() {
       clearTimeout(durationAdjustTimeoutRef.current);
       durationAdjustTimeoutRef.current = null;
     }
+    setTimeout(() => {
+      isTouchActiveRef.current = false;
+    }, 100);
   }, []);
 
   const toggleClickMode = useCallback((value: boolean) => {
@@ -1604,10 +1666,13 @@ export default function ClickTrackGenerator() {
                             variant="outline"
                             size="sm"
                             className="h-10 w-10 p-0"
-                            onMouseDown={() => startStartTempoAdjustment(-1)}
+                            onMouseDown={() => startStartTempoAdjustment(-1, false)}
                             onMouseUp={stopStartTempoAdjustment}
                             onMouseLeave={stopStartTempoAdjustment}
-                            onTouchStart={() => startStartTempoAdjustment(-1)}
+                            onTouchStart={(e) => {
+                              e.preventDefault();
+                              startStartTempoAdjustment(-1, true);
+                            }}
                             onTouchEnd={stopStartTempoAdjustment}
                             disabled={startTempo <= 60}
                           >
@@ -1625,10 +1690,13 @@ export default function ClickTrackGenerator() {
                             variant="outline"
                             size="sm"
                             className="h-10 w-10 p-0"
-                            onMouseDown={() => startStartTempoAdjustment(1)}
+                            onMouseDown={() => startStartTempoAdjustment(1, false)}
                             onMouseUp={stopStartTempoAdjustment}
                             onMouseLeave={stopStartTempoAdjustment}
-                            onTouchStart={() => startStartTempoAdjustment(1)}
+                            onTouchStart={(e) => {
+                              e.preventDefault();
+                              startStartTempoAdjustment(1, true);
+                            }}
                             onTouchEnd={stopStartTempoAdjustment}
                             disabled={startTempo >= 200}
                           >
@@ -1653,10 +1721,13 @@ export default function ClickTrackGenerator() {
                             variant="outline"
                             size="sm"
                             className="h-10 w-10 p-0"
-                            onMouseDown={() => startEndTempoAdjustment(-1)}
+                            onMouseDown={() => startEndTempoAdjustment(-1, false)}
                             onMouseUp={stopEndTempoAdjustment}
                             onMouseLeave={stopEndTempoAdjustment}
-                            onTouchStart={() => startEndTempoAdjustment(-1)}
+                            onTouchStart={(e) => {
+                              e.preventDefault();
+                              startEndTempoAdjustment(-1, true);
+                            }}
                             onTouchEnd={stopEndTempoAdjustment}
                             disabled={endTempo <= 60}
                           >
@@ -1674,10 +1745,13 @@ export default function ClickTrackGenerator() {
                             variant="outline"
                             size="sm"
                             className="h-10 w-10 p-0"
-                            onMouseDown={() => startEndTempoAdjustment(1)}
+                            onMouseDown={() => startEndTempoAdjustment(1, false)}
                             onMouseUp={stopEndTempoAdjustment}
                             onMouseLeave={stopEndTempoAdjustment}
-                            onTouchStart={() => startEndTempoAdjustment(1)}
+                            onTouchStart={(e) => {
+                              e.preventDefault();
+                              startEndTempoAdjustment(1, true);
+                            }}
                             onTouchEnd={stopEndTempoAdjustment}
                             disabled={endTempo >= 200}
                           >
@@ -1702,10 +1776,13 @@ export default function ClickTrackGenerator() {
                             variant="outline"
                             size="sm"
                             className="h-10 w-10 p-0"
-                            onMouseDown={() => startDurationAdjustment(-1)}
+                            onMouseDown={() => startDurationAdjustment(-1, false)}
                             onMouseUp={stopDurationAdjustment}
                             onMouseLeave={stopDurationAdjustment}
-                            onTouchStart={() => startDurationAdjustment(-1)}
+                            onTouchStart={(e) => {
+                              e.preventDefault();
+                              startDurationAdjustment(-1, true);
+                            }}
                             onTouchEnd={stopDurationAdjustment}
                             disabled={duration <= 1}
                           >
@@ -1723,10 +1800,13 @@ export default function ClickTrackGenerator() {
                             variant="outline"
                             size="sm"
                             className="h-10 w-10 p-0"
-                            onMouseDown={() => startDurationAdjustment(1)}
+                            onMouseDown={() => startDurationAdjustment(1, false)}
                             onMouseUp={stopDurationAdjustment}
                             onMouseLeave={stopDurationAdjustment}
-                            onTouchStart={() => startDurationAdjustment(1)}
+                            onTouchStart={(e) => {
+                              e.preventDefault();
+                              startDurationAdjustment(1, true);
+                            }}
                             onTouchEnd={stopDurationAdjustment}
                             disabled={duration >= 60}
                           >
@@ -1918,10 +1998,13 @@ export default function ClickTrackGenerator() {
                   variant="outline"
                   size="lg"
                   className="h-16 w-16 p-0"
-                  onMouseDown={() => startBpmAdjustment(-1)}
+                  onMouseDown={() => startBpmAdjustment(-1, false)}
                   onMouseUp={stopBpmAdjustment}
                   onMouseLeave={stopBpmAdjustment}
-                  onTouchStart={() => startBpmAdjustment(-1)}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    startBpmAdjustment(-1, true);
+                  }}
                   onTouchEnd={stopBpmAdjustment}
                   disabled={displayTempo <= 60 || isIncreasingTempo}
                 >
@@ -1957,10 +2040,13 @@ export default function ClickTrackGenerator() {
                   variant="outline"
                   size="lg"
                   className="h-16 w-16 p-0"
-                  onMouseDown={() => startBpmAdjustment(1)}
+                  onMouseDown={() => startBpmAdjustment(1, false)}
                   onMouseUp={stopBpmAdjustment}
                   onMouseLeave={stopBpmAdjustment}
-                  onTouchStart={() => startBpmAdjustment(1)}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    startBpmAdjustment(1, true);
+                  }}
                   onTouchEnd={stopBpmAdjustment}
                   disabled={displayTempo >= 200 || isIncreasingTempo}
                 >
