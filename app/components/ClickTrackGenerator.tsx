@@ -1091,8 +1091,8 @@ export default function ClickTrackGenerator() {
 
   return (
     <AudioWakeLock isPlaying={isPlaying}>
-      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-4 relative">
-        <Card className="w-full max-w-md h-[calc(100vh-2rem)] flex flex-col">
+      <div className="h-[100dvh] flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-4 relative">
+        <Card className="w-full max-w-md h-[calc(100dvh-2rem)] flex flex-col">
           <CardHeader>
             <CardTitle className="text-3xl font-bold text-center">
               DrumClick
