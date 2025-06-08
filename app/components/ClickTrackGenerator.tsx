@@ -33,6 +33,7 @@ interface PlaylistItem {
   accentFirstBeat: boolean;
   subdivision: "1" | "1/2" | "1/3" | "1/4";
   voiceSubdivision: boolean;
+  swingMode: boolean;
   useClick: boolean;
   useVoice: boolean;
   isIncreasingTempo: boolean;
@@ -67,6 +68,8 @@ export default function ClickTrackGenerator() {
   const subdivisionRef = useRef(subdivision);
   const [voiceSubdivision, setVoiceSubdivision] = useState(false);
   const voiceSubdivisionRef = useRef(voiceSubdivision);
+  const [swingMode, setSwingMode] = useState(false);
+  const swingModeRef = useRef(swingMode);
   const hadToResumeRef = useRef(false);
   // Add refs for background audio
   const wakeLockSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -168,6 +171,11 @@ export default function ClickTrackGenerator() {
     (time: number, subBeat: number, subCount: number, isAccented: boolean) => {
       if (!audioContextRef.current) return;
 
+      // Skip middle beat in swing mode for triplets
+      if (subCount === 3 && swingModeRef.current && subBeat === 1) {
+        return; // Skip the middle beat (beat 2 of triplet)
+      }
+
       let frequency: number;
       if (subBeat === 0) {
         frequency = isAccented ? 1000 : 600; // Main beat
@@ -201,6 +209,11 @@ export default function ClickTrackGenerator() {
   const playSubdivision = useCallback(
     (time: number, subBeat: number, subCount: number) => {
       if (!audioContextRef.current) return;
+
+      // Skip middle beat in swing mode for triplets
+      if (subCount === 3 && swingModeRef.current && subBeat === 1) {
+        return; // Skip the middle beat (beat 2 of triplet)
+      }
 
       let sampleIndex: number;
       if (subCount === 2) {
@@ -257,6 +270,7 @@ export default function ClickTrackGenerator() {
       accentFirstBeat,
       subdivision,
       voiceSubdivision,
+      swingMode,
       useClick,
       useVoice,
       isIncreasingTempo,
@@ -264,7 +278,7 @@ export default function ClickTrackGenerator() {
       endTempo,
       duration
     };
-  }, [timeSignature, tempo, accentFirstBeat, subdivision, voiceSubdivision, useClick, useVoice, isIncreasingTempo, startTempo, endTempo, duration]);
+  }, [timeSignature, tempo, accentFirstBeat, subdivision, voiceSubdivision, swingMode, useClick, useVoice, isIncreasingTempo, startTempo, endTempo, duration]);
 
   const saveCurrentAsPlaylist = useCallback((name: string) => {
     const newPlaylist: PlaylistItem = {
@@ -307,6 +321,8 @@ export default function ClickTrackGenerator() {
     subdivisionRef.current = playlist.subdivision;
     setVoiceSubdivision(playlist.voiceSubdivision);
     voiceSubdivisionRef.current = playlist.voiceSubdivision;
+    setSwingMode(playlist.swingMode || false);
+    swingModeRef.current = playlist.swingMode || false;
     setUseClick(playlist.useClick);
     setUseVoice(playlist.useVoice);
     setIsIncreasingTempo(playlist.isIncreasingTempo);
@@ -999,6 +1015,10 @@ export default function ClickTrackGenerator() {
     voiceSubdivisionRef.current = voiceSubdivision;
   }, [voiceSubdivision]);
 
+  useEffect(() => {
+    swingModeRef.current = swingMode;
+  }, [swingMode]);
+
   // Add this useEffect near your other useEffect hooks
   useEffect(() => {
     if (timeSignature === "6/8 (Compound)") {
@@ -1177,9 +1197,24 @@ export default function ClickTrackGenerator() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="subdivision" className="text-sm font-medium">
-                    Subdivision
-                  </Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="subdivision" className="text-sm font-medium">
+                      Subdivision
+                    </Label>
+                    {subdivision === "1/3" && (
+                      <div className="flex items-center space-x-2">
+                        <Label htmlFor="swing-inline" className="text-xs text-muted-foreground">
+                          Swing
+                        </Label>
+                        <Switch
+                          id="swing-inline"
+                          checked={swingMode}
+                          onCheckedChange={setSwingMode}
+                          className="scale-75"
+                        />
+                      </div>
+                    )}
+                  </div>
                   <RadioGroup
                     id="subdivision"
                     value={subdivision}
@@ -1190,8 +1225,21 @@ export default function ClickTrackGenerator() {
                     disabled={!useClick && !useVoice}
                   >
                     <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="1" id="r1" />
-                      <Label htmlFor="r1">1</Label>
+                      <RadioGroupItem 
+                        value="1" 
+                        id="r1"
+                        disabled={timeSignature === "6/8 (Compound)"}
+                      />
+                      <Label 
+                        htmlFor="r1"
+                        className={
+                          timeSignature === "6/8 (Compound)"
+                            ? "text-gray-400"
+                            : ""
+                        }
+                      >
+                        1
+                      </Label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem
@@ -1211,8 +1259,21 @@ export default function ClickTrackGenerator() {
                       </Label>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="1/3" id="r3" />
-                      <Label htmlFor="r3">1/3</Label>
+                      <RadioGroupItem 
+                        value="1/3" 
+                        id="r3"
+                        disabled={timeSignature === "6/8 (Compound)"}
+                      />
+                      <Label 
+                        htmlFor="r3"
+                        className={
+                          timeSignature === "6/8 (Compound)"
+                            ? "text-gray-400"
+                            : ""
+                        }
+                      >
+                        1/3
+                      </Label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem
