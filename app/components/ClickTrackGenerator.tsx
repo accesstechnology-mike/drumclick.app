@@ -142,7 +142,7 @@ export default function ClickTrackGenerator() {
   // Handle window height changes to show/hide logo
   useEffect(() => {
     const handleResize = () => {
-      setShowLogo(window.innerHeight >= 650);
+      setShowLogo(window.innerHeight >= 700);
     };
 
     // Set initial value
@@ -1317,20 +1317,20 @@ export default function ClickTrackGenerator() {
 
   return (
     <AudioWakeLock isPlaying={isPlaying}>
-      <div className="h-[100dvh] flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-4 relative">
+      <div className="min-h-[100svh] max-h-[100svh] flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-2 sm:p-4 relative">
         {/* Flash overlay */}
         {appFlashing && (
           <div className={`fixed inset-0 opacity-90 z-50 pointer-events-none transition-opacity duration-100 ${
             flashColor === 'yellow' ? 'bg-yellow-400' : 'bg-green-500'
           }`} />
         )}
-        <Card className="w-full max-w-md h-[calc(100dvh-2rem)] flex flex-col">
-                      <CardHeader>
-              <CardTitle className="text-3xl font-bold text-center flex items-center justify-center gap-2">
+        <Card className="w-full max-w-md h-[calc(100svh-1rem)] sm:h-[calc(100svh-2rem)] flex flex-col overflow-hidden">
+                      <CardHeader className="py-3 sm:py-6">
+              <CardTitle className="text-2xl sm:text-3xl font-bold text-center flex items-center justify-center gap-2">
                 <img 
                   src="/images/DrumClick_logo.png" 
                   alt="DrumClick Logo" 
-                  className="h-8 w-auto"
+                  className="h-6 sm:h-8 w-auto"
                 />
                 DrumClick
               </CardTitle>
