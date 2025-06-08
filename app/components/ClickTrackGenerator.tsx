@@ -1351,7 +1351,11 @@ export default function ClickTrackGenerator() {
                   <img 
                     src="/images/DrumClick_logo.png" 
                     alt="DrumClick Logo" 
-                    className="h-48 w-auto"
+                    className={`h-48 w-auto cursor-pointer select-none transition-all duration-200 hover:scale-105 active:scale-95 ${
+                      isPlaying ? 'brightness-110 drop-shadow-lg filter' : 'brightness-100'
+                    }`}
+                    onClick={startStop}
+                    title={isPlaying ? "Click to stop" : "Click to start"}
                   />
                 </div>
               )}
