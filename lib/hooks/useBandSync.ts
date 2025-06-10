@@ -80,6 +80,8 @@ export default function useBandSync(role: SyncRole) {
   const ewmaRef = useRef<number | null>(null);
   const qualityRef = useRef<SyncQuality>('poor');
   const stdDevRef = useRef<number>(Infinity);
+  // Long-term jitter (EWMA of std-dev)
+  const longTermJitterRef = useRef<number>(Infinity);
 
   /* ------------------------------------------------------------------ */
   /* Helpers                                                            */
@@ -237,9 +239,18 @@ export default function useBandSync(role: SyncRole) {
             const stdDev = Math.sqrt(variance) * 1000; // convert sec->ms
             stdDevRef.current = stdDev;
 
-            if (stdDev < QUALITY_THRESHOLDS.excellent) {
+            // Update long-term EWMA of jitter
+            if (!isFinite(longTermJitterRef.current)) {
+              longTermJitterRef.current = stdDev;
+            } else {
+              longTermJitterRef.current = 0.1 * stdDev + 0.9 * longTermJitterRef.current;
+            }
+
+            // Adjust quality based on long-term jitter for stability
+            const jitterMetric = longTermJitterRef.current;
+            if (jitterMetric < QUALITY_THRESHOLDS.excellent) {
               qualityRef.current = 'excellent';
-            } else if (stdDev < QUALITY_THRESHOLDS.good) {
+            } else if (jitterMetric < QUALITY_THRESHOLDS.good) {
               qualityRef.current = 'good';
             } else {
               qualityRef.current = 'poor';
@@ -383,6 +394,10 @@ export default function useBandSync(role: SyncRole) {
 
     get jitterMs() {
       return stdDevRef.current;
+    },
+
+    get longTermJitterMs() {
+      return longTermJitterRef.current;
     },
 
     get quality(): SyncQuality {
