@@ -59,5 +59,48 @@ Things that could be added later:
 *  NAT-free hosting: self-host the PeerJS signalling server.
 *  UI: per-member latency read-out.
 
+## 5  Usage examples
+
+### Leader component
+
+```tsx
+const bandSync = useBandSync('leader');
+
+// UI
+<button onClick={() => {
+  if (!bandSync.ready) {
+    bandSync.startHosting();
+    return;
+  }
+  metronome.start();
+  // Broadcast to members after local context scheduled
+  bandSync.startTransport(0.1 /* 100 ms */, tempo, signature);
+}}>Play</button>
+```
+
+### Member component
+
+```tsx
+const [code, setCode] = useState('');
+const bandSync = useBandSync('member');
+
+useEffect(() => {
+  bandSync.onStart(({ startAudioTime, tempo, signature }) => {
+    metronome.load({ tempo, signature });
+    metronome.playAt(bandSync.convertHostTime(startAudioTime));
+  });
+}, []);
+
+<button onClick={() => bandSync.joinSession(code)}>Join</button>
+```
+
+## 6  Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Members hear click offset / drifting | Wi-Fi jitter, large skew | Ensure good signal, wait ~5 pings for filter to converge |
+| "Disconnected. Retrying…" keeps flashing | NAT traversal failed | Try different network or self-host PeerJS server |
+| No audio after permissions prompt | Browser blocked AudioContext until user gesture | Click anywhere on screen to unlock audio |
+
 ---
 © 2025 DrumClick

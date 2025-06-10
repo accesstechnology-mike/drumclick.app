@@ -3,6 +3,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Peer, { DataConnection } from 'peerjs';
 import useAudioEngine from './useAudioEngine';
 
+/** Reconnection backoff timing (ms) */
+const INITIAL_BACKOFF = 2_000;
+const MAX_BACKOFF = 30_000;
+
+/** Slide-window size for skew median filtering */
+const SKEW_WINDOW = 16;
+
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
 /* ------------------------------------------------------------------ */
@@ -48,7 +55,8 @@ export default function useBandSync(role: SyncRole) {
   // State -----------------------------------------------------------
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
+  type Status = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
+  const [status, setStatus] = useState<Status>('idle');
   const [connections, setConnections] = useState<DataConnection[]>([]);
   const skewRef = useRef<number>(0); // hostAudioTime - localAudioTime
 
@@ -56,8 +64,7 @@ export default function useBandSync(role: SyncRole) {
   const peerRef = useRef<Peer | null>(null);
   const pingsRef = useRef<Map<number, number>>(new Map());
   const skewSamplesRef = useRef<number[]>([]);
-
-  const SKEW_WINDOW = 8;
+  const backoffRef = useRef<number>(INITIAL_BACKOFF);
 
   /* ------------------------------------------------------------------ */
   /* Helpers                                                            */
@@ -111,25 +118,49 @@ export default function useBandSync(role: SyncRole) {
   const joinSession = useCallback((id: string) => {
     if (role !== 'member') throw new Error('Only member can join');
     setSessionId(id);
-    setStatus('connecting');
-    const peer = createPeer();
-    peer.on('open', () => {
-      const conn: DataConnection = peer.connect(id, { reliable: true });
-      conn.on('open', () => {
-        setConnections([conn]);
-        setReady(true);
-        setStatus('connected');
+
+    const attempt = () => {
+      setStatus(backoffRef.current === INITIAL_BACKOFF ? 'connecting' : 'reconnecting');
+
+      const peer = createPeer();
+      peer.on('open', () => {
+        const conn: DataConnection = peer.connect(id, { reliable: true });
+
+        const resetBackoff = () => {
+          backoffRef.current = INITIAL_BACKOFF;
+          setStatus('connected');
+        };
+
+        conn.on('open', () => {
+          setConnections([conn]);
+          setReady(true);
+          resetBackoff();
+        });
+
+        const scheduleRetry = () => {
+          setConnections([]);
+          setStatus('error');
+          const delay = backoffRef.current;
+          backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF);
+          setTimeout(attempt, delay);
+        };
+
+        conn.on('close', scheduleRetry);
+        conn.on('error', scheduleRetry as any);
+
+        conn.on('data', (raw: unknown) => {
+          handleMsgFromLeader(conn, raw as SyncMsg);
+        });
       });
-      conn.on('close', () => {
-        setConnections([]);
-        setStatus('error');
-        // attempt reconnection
-        setTimeout(() => joinSession(id), 2000);
+
+      peer.on('error', () => {
+        const delay = backoffRef.current;
+        backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF);
+        setTimeout(attempt, delay);
       });
-      conn.on('data', (raw: unknown) => {
-        handleMsgFromLeader(conn, raw as SyncMsg);
-      });
-    });
+    };
+
+    attempt();
   }, [role, createPeer]);
 
   /* ------------------------------------------------------------------ */
@@ -153,12 +184,26 @@ export default function useBandSync(role: SyncRole) {
           // Skew = memberAudioTimeAtPong - leaderAudioTimeAtPing - (rtt / 2)
           const approxMemberAudioAtPing = msg.audioTime - (rtt / 1000) / 2;
           const skew = approxMemberAudioAtPing - pingSendAudioTime;
-          // Save sample then compute moving average for stability
-          const sample = -skew; // so that host = local + skew
+          const sample = -skew; // host = local + sample
           const samples = skewSamplesRef.current;
+
+          // Outlier detection using Median Absolute Deviation (MAD)
+          if (samples.length >= 3) {
+            const med = median(samples);
+            const absDevs = samples.map((s) => Math.abs(s - med));
+            const mad = median(absDevs) || 1e-9; // avoid 0
+            if (Math.abs(sample - med) > 3 * mad) {
+              // Skip outlier
+              pingsRef.current.delete(msg.ts);
+              return;
+            }
+          }
+
           samples.push(sample);
           if (samples.length > SKEW_WINDOW) samples.shift();
-          skewRef.current = samples.reduce((a, b) => a + b, 0) / samples.length;
+
+          // Use median of current window for robustness
+          skewRef.current = median(samples);
         }
         pingsRef.current.delete(msg.ts);
       }
@@ -290,4 +335,12 @@ export default function useBandSync(role: SyncRole) {
     onStart,
     onStop,
   } as const;
+}
+
+/** Return median of array (mutates order) */
+function median(arr: number[]): number {
+  if (arr.length === 0) return 0;
+  const copy = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(copy.length / 2);
+  return copy.length % 2 === 0 ? (copy[mid - 1] + copy[mid]) / 2 : copy[mid];
 }

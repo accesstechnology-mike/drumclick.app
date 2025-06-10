@@ -1576,6 +1576,11 @@ export default function ClickTrackGenerator() {
                           <Loader2 className="h-4 w-4 animate-spin" />
                           <span>Connecting…</span>
                         </div>
+                      ) : bandSync.status === 'reconnecting' ? (
+                        <div className="flex items-center space-x-2 text-sm text-orange-600">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Reconnecting…</span>
+                        </div>
                       ) : bandSync.status === 'error' ? (
                         <div className="text-sm text-red-600">Disconnected. Retrying…</div>
                       ) : null}
