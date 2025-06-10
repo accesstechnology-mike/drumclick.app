@@ -11,7 +11,7 @@ import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Minus } from "lucide-react";
+import { Plus, Minus, Loader2 } from "lucide-react";
 import AudioWakeLock from "./AudioWakeLock";
 import VisualBeatIndicator from "./VisualBeatIndicator";
 import useAudioEngine from "@/lib/hooks/useAudioEngine";
@@ -1568,20 +1568,33 @@ export default function ClickTrackGenerator() {
                       )}
                     </div>
                   ) : (
-                    <div className="mt-2 flex space-x-2">
-                      <Input
-                        placeholder="Enter code"
-                        value={joinCode}
-                        onChange={(e) => setJoinCode(e.target.value)}
-                        className="flex-1"
-                      />
-                      <Button
-                        size="sm"
-                        onClick={() => bandSync.joinSession(joinCode.trim())}
-                        disabled={!joinCode.trim()}
-                      >
-                        Join
-                      </Button>
+                    <div className="mt-2 space-y-2">
+                      {bandSync.status === 'connected' ? (
+                        <div className="text-sm text-green-600">Connected</div>
+                      ) : bandSync.status === 'connecting' ? (
+                        <div className="flex items-center space-x-2 text-sm text-blue-600">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Connecting…</span>
+                        </div>
+                      ) : bandSync.status === 'error' ? (
+                        <div className="text-sm text-red-600">Disconnected. Retrying…</div>
+                      ) : null}
+                      <div className="flex space-x-2">
+                        <Input
+                          placeholder="Enter code"
+                          value={joinCode}
+                          onChange={(e) => setJoinCode(e.target.value)}
+                          className="flex-1"
+                          disabled={bandSync.status === 'connecting'}
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => bandSync.joinSession(joinCode.trim())}
+                          disabled={!joinCode.trim() || bandSync.status === 'connecting'}
+                        >
+                          Join
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>

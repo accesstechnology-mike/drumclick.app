@@ -48,12 +48,16 @@ export default function useBandSync(role: SyncRole) {
   // State -----------------------------------------------------------
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [connections, setConnections] = useState<DataConnection[]>([]);
   const skewRef = useRef<number>(0); // hostAudioTime - localAudioTime
 
   // Internal refs ---------------------------------------------------
   const peerRef = useRef<Peer | null>(null);
   const pingsRef = useRef<Map<number, number>>(new Map());
+  const skewSamplesRef = useRef<number[]>([]);
+
+  const SKEW_WINDOW = 8;
 
   /* ------------------------------------------------------------------ */
   /* Helpers                                                            */
@@ -67,6 +71,11 @@ export default function useBandSync(role: SyncRole) {
     });
     peerRef.current.on('error', (err: any) => {
       console.error('[BandSync] peer error', err);
+      setStatus('error');
+    });
+    peerRef.current.on('disconnected', () => {
+      console.warn('[BandSync] signalling server disconnected, attempting reconnect');
+      peerRef.current?.reconnect();
     });
     return peerRef.current;
   }, []);
@@ -74,18 +83,23 @@ export default function useBandSync(role: SyncRole) {
   /* Leader setup ---------------------------------------------------- */
   const startHosting = useCallback(() => {
     if (role !== 'leader') throw new Error('Only leader can host');
+    setStatus('connecting');
     const peer = createPeer();
     peer.on('open', (id: string) => {
       setSessionId(id);
       setReady(true);
+      setStatus('connected');
     });
 
     peer.on('connection', (conn) => {
       conn.on('open', () => {
         setConnections((prev) => [...prev, conn]);
+        setStatus('connected');
       });
       conn.on('close', () => {
         setConnections((prev) => prev.filter((c) => c !== conn));
+        // Members will handle their own reconnect logic; for leader just log
+        console.warn('[BandSync] connection closed by member');
       });
       conn.on('data', (raw: unknown) => {
         handleMsgFromMember(conn, raw as SyncMsg);
@@ -97,15 +111,20 @@ export default function useBandSync(role: SyncRole) {
   const joinSession = useCallback((id: string) => {
     if (role !== 'member') throw new Error('Only member can join');
     setSessionId(id);
+    setStatus('connecting');
     const peer = createPeer();
     peer.on('open', () => {
       const conn: DataConnection = peer.connect(id, { reliable: true });
       conn.on('open', () => {
         setConnections([conn]);
         setReady(true);
+        setStatus('connected');
       });
       conn.on('close', () => {
         setConnections([]);
+        setStatus('error');
+        // attempt reconnection
+        setTimeout(() => joinSession(id), 2000);
       });
       conn.on('data', (raw: unknown) => {
         handleMsgFromLeader(conn, raw as SyncMsg);
@@ -126,7 +145,7 @@ export default function useBandSync(role: SyncRole) {
   );
 
   const handleMsgFromMember = useCallback(
-    (conn: DataConnection, msg: SyncMsg) => {
+    (_conn: DataConnection, msg: SyncMsg) => {
       if (msg.type === 'pong') {
         const rtt = performance.now() - msg.ts;
         const pingSendAudioTime = pingsRef.current.get(msg.ts);
@@ -134,8 +153,12 @@ export default function useBandSync(role: SyncRole) {
           // Skew = memberAudioTimeAtPong - leaderAudioTimeAtPing - (rtt / 2)
           const approxMemberAudioAtPing = msg.audioTime - (rtt / 1000) / 2;
           const skew = approxMemberAudioAtPing - pingSendAudioTime;
-          // We keep the negative of skew so that hostAudioTime = localAudioTime + skewRef
-          skewRef.current = -skew;
+          // Save sample then compute moving average for stability
+          const sample = -skew; // so that host = local + skew
+          const samples = skewSamplesRef.current;
+          samples.push(sample);
+          if (samples.length > SKEW_WINDOW) samples.shift();
+          skewRef.current = samples.reduce((a, b) => a + b, 0) / samples.length;
         }
         pingsRef.current.delete(msg.ts);
       }
@@ -243,6 +266,7 @@ export default function useBandSync(role: SyncRole) {
     role,
     ready,
     sessionId,
+    status,
 
     /* Leader actions */
     startHosting,
