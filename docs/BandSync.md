@@ -102,5 +102,22 @@ useEffect(() => {
 | "Disconnected. Retrying…" keeps flashing | NAT traversal failed | Try different network or self-host PeerJS server |
 | No audio after permissions prompt | Browser blocked AudioContext until user gesture | Click anywhere on screen to unlock audio |
 
+## 7  Sync-quality indicator
+
+When connected, the UI shows a coloured dot and label derived from jitter (std-dev of clock-skew samples):
+
+| Quality     | Jitter (σ, ms) | Colour |
+|-------------|----------------|--------|
+| excellent   | < 3            | Green  |
+| good        | < 7            | Yellow |
+| poor        | ≥ 7            | Red    |
+
+If you see "poor" for more than a few seconds, reduce Wi-Fi congestion or move closer to the router.
+
+## 8  Reconnection logic
+
+Members auto-retry with exponential back-off: 2 s → 4 s → 8 s → … up to 30 s, plus 0–30 % random jitter to avoid herd effects.
+The countdown is visible in the UI.  Back-off resets instantly when the DataChannel is re-established.
+
 ---
 © 2025 DrumClick

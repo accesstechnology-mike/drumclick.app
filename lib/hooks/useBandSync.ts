@@ -13,6 +13,14 @@ const SKEW_WINDOW = 16;
 /** Exponential Weighted Moving Average for smooth slow drift */
 const EWMA_ALPHA = 0.2;
 
+// After EWMA_ALPHA constant definitions add quality thresholds
+const QUALITY_THRESHOLDS = {
+  excellent: 3, // ms std-dev
+  good: 7,
+};
+
+type SyncQuality = 'excellent' | 'good' | 'poor';
+
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
 /* ------------------------------------------------------------------ */
@@ -70,6 +78,8 @@ export default function useBandSync(role: SyncRole) {
   const backoffRef = useRef<number>(INITIAL_BACKOFF);
   const retryAtRef = useRef<number | null>(null);
   const ewmaRef = useRef<number | null>(null);
+  const qualityRef = useRef<SyncQuality>('poor');
+  const stdDevRef = useRef<number>(Infinity);
 
   /* ------------------------------------------------------------------ */
   /* Helpers                                                            */
@@ -219,6 +229,22 @@ export default function useBandSync(role: SyncRole) {
           // Combine: take median for robustness then correct slowly towards EWMA
           const blended = (median(samples) + ewmaRef.current) / 2;
           skewRef.current = blended;
+
+          // Calculate std-dev (jitter) in ms
+          if (samples.length >= 3) {
+            const mean = samples.reduce((a,b)=>a+b,0)/samples.length;
+            const variance = samples.reduce((a,b)=>a+(b-mean)**2,0)/samples.length;
+            const stdDev = Math.sqrt(variance) * 1000; // convert sec->ms
+            stdDevRef.current = stdDev;
+
+            if (stdDev < QUALITY_THRESHOLDS.excellent) {
+              qualityRef.current = 'excellent';
+            } else if (stdDev < QUALITY_THRESHOLDS.good) {
+              qualityRef.current = 'good';
+            } else {
+              qualityRef.current = 'poor';
+            }
+          }
         }
         pingsRef.current.delete(msg.ts);
       }
@@ -353,6 +379,14 @@ export default function useBandSync(role: SyncRole) {
     /* Additional helpers */
     get retryInMs() {
       return retryAtRef.current ? Math.max(0, retryAtRef.current - Date.now()) : 0;
+    },
+
+    get jitterMs() {
+      return stdDevRef.current;
+    },
+
+    get quality(): SyncQuality {
+      return qualityRef.current;
     },
   } as const;
 }
