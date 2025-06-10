@@ -1587,7 +1587,7 @@ export default function ClickTrackGenerator() {
                       {bandSync.status === 'connected' && (
                         <div className="text-xs flex items-center space-x-1">
                           <span
-                            className={`inline-block h-2 w-2 rounded-full ${bandSync.quality === 'excellent' ? 'bg-green-500' : bandSync.quality === 'good' ? 'bg-yellow-400' : 'bg-red-500'}`}
+                            className={`inline-block h-2 w-2 rounded-full ${bandSync.quality === 'excellent' ? 'bg-green-500' : bandSync.quality === 'good' ? 'bg-yellow-400' : bandSync.quality === 'fair' ? 'bg-orange-400' : 'bg-red-500'}`}
                             title={`Jitter: ${bandSync.longTermJitterMs.toFixed(1)} ms`}
                           />
                           <span className="text-gray-600">{bandSync.quality}</span>

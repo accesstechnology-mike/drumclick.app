@@ -109,8 +109,9 @@ When connected, the UI shows a coloured dot and label derived from jitter (std-d
 | Quality     | Jitter (σ, ms) | Colour |
 |-------------|----------------|--------|
 | excellent   | < 3            | Green  |
-| good        | < 7            | Yellow |
-| poor        | ≥ 7            | Red    |
+| good        | < 5            | Yellow |
+| fair        | < 10           | Orange |
+| poor        | ≥ 10           | Red    |
 
 If you see "poor" for more than a few seconds, reduce Wi-Fi congestion or move closer to the router.
 

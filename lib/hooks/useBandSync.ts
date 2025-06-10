@@ -15,11 +15,15 @@ const EWMA_ALPHA = 0.2;
 
 // After EWMA_ALPHA constant definitions add quality thresholds
 const QUALITY_THRESHOLDS = {
-  excellent: 3, // ms std-dev
-  good: 7,
+  excellent: 2,
+  good: 5,
+  fair: 10,
 };
 
-type SyncQuality = 'excellent' | 'good' | 'poor';
+const MIN_WINDOW = 8;
+const MAX_WINDOW = 64;
+const WINDOW_GROW_THRESHOLD = 10; // ms
+const WINDOW_SHRINK_THRESHOLD = 2; // ms
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -56,6 +60,8 @@ interface StopMsg extends BaseMsg {
 
 type SyncMsg = PingMsg | PongMsg | StartMsg | StopMsg;
 
+type Quality = 'excellent' | 'good' | 'fair' | 'poor';
+
 /* ------------------------------------------------------------------ */
 /* Hook                                                                */
 /* ------------------------------------------------------------------ */
@@ -78,7 +84,7 @@ export default function useBandSync(role: SyncRole) {
   const backoffRef = useRef<number>(INITIAL_BACKOFF);
   const retryAtRef = useRef<number | null>(null);
   const ewmaRef = useRef<number | null>(null);
-  const qualityRef = useRef<SyncQuality>('poor');
+  const qualityRef = useRef<Quality>('poor');
   const stdDevRef = useRef<number>(Infinity);
   // Long-term jitter (EWMA of std-dev)
   const longTermJitterRef = useRef<number>(Infinity);
@@ -252,9 +258,22 @@ export default function useBandSync(role: SyncRole) {
               qualityRef.current = 'excellent';
             } else if (jitterMetric < QUALITY_THRESHOLDS.good) {
               qualityRef.current = 'good';
+            } else if (jitterMetric < QUALITY_THRESHOLDS.fair) {
+              qualityRef.current = 'fair';
             } else {
               qualityRef.current = 'poor';
             }
+
+            // Dynamic window sizing
+            let windowSize = samples.length;
+            if (jitterMetric > WINDOW_GROW_THRESHOLD && windowSize < MAX_WINDOW) {
+              // Network unstable; increase buffer window
+              windowSize = Math.min(MAX_WINDOW, windowSize + 4);
+            } else if (jitterMetric < WINDOW_SHRINK_THRESHOLD && windowSize > MIN_WINDOW) {
+              windowSize = Math.max(MIN_WINDOW, windowSize - 4);
+            }
+            // Trim samples to new size
+            while (samples.length > windowSize) samples.shift();
           }
         }
         pingsRef.current.delete(msg.ts);
@@ -400,7 +419,7 @@ export default function useBandSync(role: SyncRole) {
       return longTermJitterRef.current;
     },
 
-    get quality(): SyncQuality {
+    get quality(): Quality {
       return qualityRef.current;
     },
   } as const;
