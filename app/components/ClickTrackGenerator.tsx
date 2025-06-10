@@ -1582,7 +1582,7 @@ export default function ClickTrackGenerator() {
                           <span>Reconnecting…</span>
                         </div>
                       ) : bandSync.status === 'error' ? (
-                        <div className="text-sm text-red-600">Disconnected. Retrying…</div>
+                        <div className="text-sm text-red-600">Disconnected. Retrying in {Math.ceil(bandSync.retryInMs / 1000)}s…</div>
                       ) : null}
                       <div className="flex space-x-2">
                         <Input

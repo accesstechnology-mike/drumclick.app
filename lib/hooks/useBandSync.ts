@@ -1,7 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Peer from 'peerjs';
-import type { DataConnection } from 'peerjs';
+import Peer, { DataConnection } from 'peerjs';
 import useAudioEngine from './useAudioEngine';
 
 /** Reconnection backoff timing (ms) */
@@ -10,6 +9,9 @@ const MAX_BACKOFF = 30_000;
 
 /** Slide-window size for skew median filtering */
 const SKEW_WINDOW = 16;
+
+/** Exponential Weighted Moving Average for smooth slow drift */
+const EWMA_ALPHA = 0.2;
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -66,6 +68,8 @@ export default function useBandSync(role: SyncRole) {
   const pingsRef = useRef<Map<number, number>>(new Map());
   const skewSamplesRef = useRef<number[]>([]);
   const backoffRef = useRef<number>(INITIAL_BACKOFF);
+  const retryAtRef = useRef<number | null>(null);
+  const ewmaRef = useRef<number | null>(null);
 
   /* ------------------------------------------------------------------ */
   /* Helpers                                                            */
@@ -99,7 +103,7 @@ export default function useBandSync(role: SyncRole) {
       setStatus('connected');
     });
 
-    peer.on('connection', (conn) => {
+    peer.on('connection', (conn: DataConnection) => {
       conn.on('open', () => {
         setConnections((prev) => [...prev, conn]);
         setStatus('connected');
@@ -141,7 +145,8 @@ export default function useBandSync(role: SyncRole) {
         const scheduleRetry = () => {
           setConnections([]);
           setStatus('error');
-          const delay = backoffRef.current;
+          const delay = backoffRef.current * (1 + Math.random() * 0.3); // jitter 0-30%
+          retryAtRef.current = Date.now() + delay;
           backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF);
           setTimeout(attempt, delay);
         };
@@ -155,7 +160,8 @@ export default function useBandSync(role: SyncRole) {
       });
 
       peer.on('error', () => {
-        const delay = backoffRef.current;
+        const delay = backoffRef.current * (1 + Math.random() * 0.3);
+        retryAtRef.current = Date.now() + delay;
         backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF);
         setTimeout(attempt, delay);
       });
@@ -203,8 +209,16 @@ export default function useBandSync(role: SyncRole) {
           samples.push(sample);
           if (samples.length > SKEW_WINDOW) samples.shift();
 
-          // Use median of current window for robustness
-          skewRef.current = median(samples);
+          // Exponential Weighted Moving Average for smooth slow drift
+          if (ewmaRef.current === null) {
+            ewmaRef.current = sample;
+          } else {
+            ewmaRef.current = EWMA_ALPHA * sample + (1 - EWMA_ALPHA) * ewmaRef.current;
+          }
+
+          // Combine: take median for robustness then correct slowly towards EWMA
+          const blended = (median(samples) + ewmaRef.current) / 2;
+          skewRef.current = blended;
         }
         pingsRef.current.delete(msg.ts);
       }
@@ -335,6 +349,11 @@ export default function useBandSync(role: SyncRole) {
     /* Event hooks */
     onStart,
     onStop,
+
+    /* Additional helpers */
+    get retryInMs() {
+      return retryAtRef.current ? Math.max(0, retryAtRef.current - Date.now()) : 0;
+    },
   } as const;
 }
 
