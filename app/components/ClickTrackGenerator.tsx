@@ -1391,12 +1391,7 @@ export default function ClickTrackGenerator() {
       <div className="min-h-[100svh] max-h-[100svh] flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 p-2 sm:p-4">
         <Card className="w-full max-w-md h-[calc(100svh-1rem)] sm:h-[calc(100svh-2rem)] flex flex-col overflow-hidden">
           <CardHeader className="py-3 sm:py-6">
-            <CardTitle className="text-2xl sm:text-3xl font-bold text-center flex items-center justify-center gap-2">
-              <img 
-                src="/images/DrumClick_logo.png" 
-                alt="DrumClick Logo" 
-                className="h-6 sm:h-8 w-auto"
-              />
+            <CardTitle className="text-2xl sm:text-3xl font-bold text-center">
               DrumClick
             </CardTitle>
           </CardHeader>
@@ -1418,19 +1413,16 @@ export default function ClickTrackGenerator() {
           }`} />
         )}
         <Card className="w-full max-w-md h-[calc(100svh-1rem)] sm:h-[calc(100svh-2rem)] flex flex-col overflow-hidden">
-                      <CardHeader className="py-3 sm:py-6">
-              <CardTitle className="text-2xl sm:text-3xl font-bold text-center flex items-center justify-center gap-2">
-                <img 
-                  src="/images/DrumClick_logo.png" 
-                  alt="DrumClick Logo" 
-                  className={`h-48 w-auto cursor-pointer select-none transition-all duration-200 hover:scale-105 active:scale-95 ${
-                    isPlaying ? 'brightness-110 drop-shadow-lg filter' : 'brightness-100'
-                  }`}
-                  onClick={startStop}
-                  title={isPlaying ? "Click to stop" : "Click to start"}
-                />
-              </CardTitle>
-            </CardHeader>
+          <CardHeader className="py-3 sm:py-6">
+            <CardTitle className="text-2xl sm:text-3xl font-bold text-center flex items-center justify-center gap-2">
+              <img 
+                src="/images/DrumClick_logo.png" 
+                alt="DrumClick Logo" 
+                className="h-6 sm:h-8 w-auto"
+              />
+              DrumClick
+            </CardTitle>
+          </CardHeader>
           <CardContent className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-hidden">
               <Tabs defaultValue="settings" className="w-full h-full flex flex-col">
@@ -1441,20 +1433,21 @@ export default function ClickTrackGenerator() {
                 </TabsList>
               <TabsContent value="settings" className="space-y-4">
 
-                                         {/* Logo - hide on short screens to prioritize time signature */}
-              {showLogo && (
-                <div className="flex justify-center py-2">
-                  <img 
-                    src="/images/DrumClick_logo.png" 
-                    alt="DrumClick Logo" 
-                    className={`h-48 w-auto cursor-pointer select-none transition-all duration-200 hover:scale-105 active:scale-95 ${
-                      isPlaying ? 'brightness-110 drop-shadow-lg filter' : 'brightness-100'
-                    }`}
-                    onClick={startStop}
-                    title={isPlaying ? "Click to stop" : "Click to start"}
-                  />
-                </div>
-              )}
+                {/* Logo - hide on short screens to prioritize time signature */}
+                {showLogo && (
+                  <div className="flex justify-center py-2">
+                    <img 
+                      src="/images/DrumClick_logo.png" 
+                      alt="DrumClick Logo" 
+                      className={`h-48 w-auto cursor-pointer select-none transition-all duration-200 hover:scale-105 active:scale-95 ${
+                        isPlaying ? 'brightness-110 drop-shadow-lg filter' : 'brightness-100'
+                      }`}
+                      onClick={startStop}
+                      title={isPlaying ? "Click to stop" : "Click to start"}
+                    />
+                  </div>
+                )}
+
                 <div>
                   <Label htmlFor="timeSignature" className="text-lg font-medium text-center block">
                     Time Signature
@@ -1476,8 +1469,6 @@ export default function ClickTrackGenerator() {
                     </SelectContent>
                   </Select>
                 </div>
-
-     
 
               </TabsContent>
               <TabsContent value="advanced" className="space-y-4 overflow-y-auto px-2">
