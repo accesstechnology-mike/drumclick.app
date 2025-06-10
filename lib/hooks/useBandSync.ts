@@ -62,6 +62,9 @@ type SyncMsg = PingMsg | PongMsg | StartMsg | StopMsg;
 
 type Quality = 'excellent' | 'good' | 'fair' | 'poor';
 
+// Add at top after Quality type
+type HealthStatus = 'healthy' | 'degraded' | 'lost';
+
 /* ------------------------------------------------------------------ */
 /* Hook                                                                */
 /* ------------------------------------------------------------------ */
@@ -86,6 +89,8 @@ export default function useBandSync(role: SyncRole) {
   const ewmaRef = useRef<number | null>(null);
   const qualityRef = useRef<Quality>('poor');
   const stdDevRef = useRef<number>(Infinity);
+  const healthRef = useRef<HealthStatus>('healthy');
+  const lastPongRef = useRef<number>(Date.now());
   // Long-term jitter (EWMA of std-dev)
   const longTermJitterRef = useRef<number>(Infinity);
 
@@ -275,6 +280,8 @@ export default function useBandSync(role: SyncRole) {
             // Trim samples to new size
             while (samples.length > windowSize) samples.shift();
           }
+
+          lastPongRef.current = Date.now(); // received response
         }
         pingsRef.current.delete(msg.ts);
       }
@@ -375,6 +382,24 @@ export default function useBandSync(role: SyncRole) {
   }, [ready, resumeContext]);
 
   /* ------------------------------------------------------------------ */
+  /* Health monitoring effect                                         */
+  /* ------------------------------------------------------------------ */
+  useEffect(() => {
+    const id = setInterval(() => {
+      const now = Date.now();
+      const delta = now - lastPongRef.current;
+      if (delta > 15000) {
+        healthRef.current = 'lost';
+      } else if (delta > 7000) {
+        healthRef.current = 'degraded';
+      } else {
+        healthRef.current = 'healthy';
+      }
+    }, 2000);
+    return () => clearInterval(id);
+  }, []);
+
+  /* ------------------------------------------------------------------ */
   /* API                                                               */
   /* ------------------------------------------------------------------ */
   return {
@@ -421,6 +446,10 @@ export default function useBandSync(role: SyncRole) {
 
     get quality(): Quality {
       return qualityRef.current;
+    },
+
+    get health(): HealthStatus {
+      return healthRef.current;
     },
   } as const;
 }

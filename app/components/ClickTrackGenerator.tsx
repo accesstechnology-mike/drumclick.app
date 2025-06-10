@@ -1592,6 +1592,8 @@ export default function ClickTrackGenerator() {
                           />
                           <span className="text-gray-600">{bandSync.quality}</span>
                           <span className="text-gray-400">({bandSync.jitterMs.toFixed(1)} ms)</span>
+                          {/* Health chip */}
+                          <span className={`ml-2 px-1 rounded text-white text-[10px] ${bandSync.health === 'healthy' ? 'bg-green-600' : bandSync.health === 'degraded' ? 'bg-yellow-600' : 'bg-red-600'}`}>{bandSync.health}</span>
                         </div>
                       )}
                       <div className="flex space-x-2">
