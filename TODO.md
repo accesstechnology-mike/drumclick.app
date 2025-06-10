@@ -177,9 +177,9 @@ Remember: The wake lock reliability testing will determine EVERYTHING. Don't ski
 The metronome logic now sits in one 2 100-line component (`ClickTrackGenerator.tsx`). Adding polyrhythms on top of this without untangling concerns first will hurt maintainability and timing accuracy.
 
 ### Step-wise Plan
-1. **Step 0 – Extract `useAudioEngine` hook**  ★ _today_
+1. **Step 0 – Extract `useAudioEngine` hook**  ✅ _done 2025-06-10_
    ‑ Owns `AudioContext`, wake-lock audio source, sample buffering, and low-level `playTone` / `playBuffer` helpers.
-2. **Step 1 – Extract `useMetronome` hook**
+2. **Step 1 – Extract `useMetronome` hook**  ✅ _done 2025-06-10_
    ‑ Keeps simple time-sig / subdivision scheduling (no polyrhythms yet).
 3. **Step 2 – Component Split**
    ‑ `TransportControls`, `RhythmControls`, `VisualBeatIndicator`, `PlaylistPanel`.
@@ -198,4 +198,4 @@ The metronome logic now sits in one 2 100-line component (`ClickTrackGenerator.t
 
 ---
 
-``Step 0 in progress → see `lib/hooks/useAudioEngine.ts`.``
+Step 1 complete ✔ – see `lib/hooks/useMetronome.ts`. Proceeding to Step 2.
