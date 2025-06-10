@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Music, Volume2, Plus, Minus, Save, SkipBack, SkipForward, RefreshCw, Trash2, GripVertical, List, Play, Square } from "lucide-react";
 import AudioWakeLock from "./AudioWakeLock";
+import useAudioEngine from "@/lib/hooks/useAudioEngine";
 
 interface WindowWithWebkitAudioContext extends Window {
   webkitAudioContext?: typeof AudioContext;
@@ -46,7 +47,8 @@ export default function ClickTrackGenerator() {
   const [activeBeat, setActiveBeat] = useState(-1);
   const [accentFirstBeat, setAccentFirstBeat] = useState(true);
   const nextBeatTimeRef = useRef(0);
-  const audioContextRef = useRef<AudioContext | null>(null);
+  // Audio engine (shared Web-Audio context & helpers)
+  const { audioContextRef, audioBuffersRef, loadAudioFiles } = useAudioEngine();
   const schedulerIdRef = useRef<number | null>(null);
   const nextNoteTimeRef = useRef(0);
   const currentBeatRef = useRef(0);
@@ -57,10 +59,7 @@ export default function ClickTrackGenerator() {
   const [tempoInput, setTempoInput] = useState(tempo.toString());
   const [useClick, setUseClick] = useState(true);
   const [useVoice, setUseVoice] = useState(false);
-  const audioBuffersRef = useRef<AudioBuffer[]>([]);
-  const [subdivision, setSubdivision] = useState<"1" | "1/2" | "1/3" | "1/4">(
-    "1"
-  );
+  const [subdivision, setSubdivision] = useState<"1" | "1/2" | "1/3" | "1/4">("1");
   const subdivisionRef = useRef(subdivision);
   const [voiceSubdivision, setVoiceSubdivision] = useState(false);
   const voiceSubdivisionRef = useRef(voiceSubdivision);
@@ -166,33 +165,7 @@ export default function ClickTrackGenerator() {
 
     osc.start(time);
     osc.stop(time + 0.1);
-  }, []);
-
-  const loadAudioFiles = useCallback(async () => {
-    if (!audioContextRef.current) return;
-
-    const samples = ["1", "2", "3", "4", "5", "6", "7", "eee", "and", "ah"];
-    const buffers: (AudioBuffer | null)[] = await Promise.all(
-      samples.map(async (sample) => {
-        try {
-          const response = await fetch(`/audio/${sample}.mp3`);
-          if (!response.ok) {
-            console.error(`Failed to fetch audio file ${sample}.mp3`);
-            return null;
-          }
-          const arrayBuffer = await response.arrayBuffer();
-          return await audioContextRef.current!.decodeAudioData(arrayBuffer);
-        } catch (error) {
-          console.error(`Error loading audio file ${sample}.mp3:`, error);
-          return null;
-        }
-      })
-    );
-
-    audioBuffersRef.current = buffers.filter(
-      (buffer): buffer is AudioBuffer => buffer !== null
-    );
-  }, []);
+  }, [audioContextRef]);
 
   const playVoice = useCallback((time: number, number: number) => {
     if (!audioContextRef.current || !audioBuffersRef.current[number]) {
@@ -212,7 +185,7 @@ export default function ClickTrackGenerator() {
     gainNode.connect(audioContextRef.current.destination);
 
     source.start(time);
-  }, []);
+  }, [audioContextRef, audioBuffersRef]);
 
   const createSubdivisionClick = useCallback(
     (time: number, subBeat: number, subCount: number, isAccented: boolean) => {
@@ -250,7 +223,7 @@ export default function ClickTrackGenerator() {
       osc.start(time);
       osc.stop(time + 0.1);
     },
-    []
+    [audioContextRef, swingModeRef]
   );
 
   const playSubdivision = useCallback(
@@ -286,7 +259,7 @@ export default function ClickTrackGenerator() {
         source.start(time);
       }
     },
-    []
+    [audioContextRef, audioBuffersRef, swingModeRef]
   );
 
   // Playlist management functions
@@ -512,7 +485,7 @@ export default function ClickTrackGenerator() {
       (audioContextRef.current.currentTime - startTimeRef.current) / 60; // Convert to minutes
     const progress = Math.min(elapsedTime / duration, 1);
     return Math.round(startTempo + progress * (endTempo - startTempo));
-  }, [isIncreasingTempo, startTempo, endTempo, duration]);
+  }, [isIncreasingTempo, startTempo, endTempo, duration, audioContextRef]);
 
   const scheduleCompound68 = useCallback(() => {
     if (!audioContextRef.current) return;
@@ -564,7 +537,7 @@ export default function ClickTrackGenerator() {
       nextNoteTimeRef.current += 60.0 / tempoRef.current;
     }
     schedulerIdRef.current = requestAnimationFrame(scheduleCompound68);
-  }, [createClickSound, playVoice, playSubdivision, useClick, useVoice, triggerAppFlash]);
+  }, [createClickSound, playVoice, playSubdivision, useClick, useVoice, triggerAppFlash, audioContextRef, audioBuffersRef, subdivisionRef, accentFirstBeatRef, tempoRef]);
 
   // Update the scheduleClick function
   const scheduleClick = useCallback(() => {
@@ -652,6 +625,11 @@ export default function ClickTrackGenerator() {
     calculateCurrentTempo,
     voiceSubdivisionRef,
     triggerAppFlash,
+    audioContextRef,
+    audioBuffersRef,
+    timeSignatureRef,
+    subdivisionRef,
+    accentFirstBeatRef
   ]);
 
   // Create a Web Audio API wake lock function to prevent audio context from suspending
@@ -699,7 +677,7 @@ export default function ClickTrackGenerator() {
       console.error('Error starting Web Audio wake lock:', e);
     }
 
-  }, []);
+  }, [audioContextRef]);
 
   // Stop the Web Audio API wake lock
   const stopWebAudioWakeLock = useCallback(() => {
@@ -1242,7 +1220,7 @@ export default function ClickTrackGenerator() {
           }
         });
       } else if (schedulerIdRef.current) {
-        // Restart scheduler for any other change without resetting beat
+        // Restart scheduler for any other change without resetting beat position
         cancelAnimationFrame(schedulerIdRef.current);
         if (timeSignature === "6/8 (Compound)") {
           scheduleCompound68();

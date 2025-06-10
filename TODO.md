@@ -170,3 +170,32 @@
 5. **SPRINT 2**: Payment integration + premium features
 
 Remember: The wake lock reliability testing will determine EVERYTHING. Don't skip it!
+
+## 🎯 Refactor & Polyrhythm Roadmap (2025-06-10)
+
+### Context
+The metronome logic now sits in one 2 100-line component (`ClickTrackGenerator.tsx`). Adding polyrhythms on top of this without untangling concerns first will hurt maintainability and timing accuracy.
+
+### Step-wise Plan
+1. **Step 0 – Extract `useAudioEngine` hook**  ★ _today_
+   ‑ Owns `AudioContext`, wake-lock audio source, sample buffering, and low-level `playTone` / `playBuffer` helpers.
+2. **Step 1 – Extract `useMetronome` hook**
+   ‑ Keeps simple time-sig / subdivision scheduling (no polyrhythms yet).
+3. **Step 2 – Component Split**
+   ‑ `TransportControls`, `RhythmControls`, `VisualBeatIndicator`, `PlaylistPanel`.
+4. **Step 3 – Add polyrhythm support (3:2, 4:3, 5:4)**
+   ‑ Data model: `{top, bottom, anchor}`.
+   ‑ Two `Pulse` objects scheduled in `useMetronome`.
+   ‑ UI: ratio selector, anchor swap, mute toggles, pitch/pan per pulse.
+5. **Step 4 – QA & UI polish**
+   ‑ Mobile + desktop latency checks, default pitch/pan tuning.
+6. **Step 5 – Ship**
+
+### Key UX Decisions
+- Anchor pulse BPM drives tempo slider.
+- Different pitch _and_ pan used to distinguish pulses.
+- Concentric LED rings visualise the two rhythms.
+
+---
+
+``Step 0 in progress → see `lib/hooks/useAudioEngine.ts`.``
