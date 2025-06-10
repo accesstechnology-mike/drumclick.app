@@ -11,9 +11,14 @@ import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Music, Volume2, Plus, Minus, Save, SkipBack, SkipForward, RefreshCw, Trash2, GripVertical, List, Play, Square } from "lucide-react";
+import { Plus, Minus } from "lucide-react";
 import AudioWakeLock from "./AudioWakeLock";
+import VisualBeatIndicator from "./VisualBeatIndicator";
 import useAudioEngine from "@/lib/hooks/useAudioEngine";
+import PlaybackControls from "./PlaybackControls";
+import TransportControls from "./TransportControls";
+import RhythmControls from "./RhythmControls";
+import PlaylistPanel from "./PlaylistPanel";
 
 interface WindowWithWebkitAudioContext extends Window {
   webkitAudioContext?: typeof AudioContext;
@@ -1418,9 +1423,12 @@ export default function ClickTrackGenerator() {
                 <img 
                   src="/images/DrumClick_logo.png" 
                   alt="DrumClick Logo" 
-                  className="h-6 sm:h-8 w-auto"
+                  className={`h-48 w-auto cursor-pointer select-none transition-all duration-200 hover:scale-105 active:scale-95 ${
+                    isPlaying ? 'brightness-110 drop-shadow-lg filter' : 'brightness-100'
+                  }`}
+                  onClick={startStop}
+                  title={isPlaying ? "Click to stop" : "Click to start"}
                 />
-                DrumClick
               </CardTitle>
             </CardHeader>
           <CardContent className="flex-1 flex flex-col overflow-hidden">
@@ -1473,145 +1481,21 @@ export default function ClickTrackGenerator() {
 
               </TabsContent>
               <TabsContent value="advanced" className="space-y-4 overflow-y-auto px-2">
-                <div className="flex items-center justify-between py-1">
-                  <Label htmlFor="accent-mode" className="text-lg font-medium">
-                    Accents
-                  </Label>
-                  <Switch
-                    id="accent-mode"
-                    checked={accentFirstBeat}
-                    onCheckedChange={setAccentFirstBeat}
-                    className="scale-125"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="subdivision" className="text-lg font-medium">
-                      Subdivision
-                    </Label>
-                    {subdivision === "1/3" && (
-                      <div className="flex items-center space-x-2">
-                        <Label htmlFor="swing-inline" className="text-sm text-muted-foreground">
-                          Swing
-                        </Label>
-                        <Switch
-                          id="swing-inline"
-                          checked={swingMode}
-                          onCheckedChange={setSwingMode}
-                          className="scale-90"
-                        />
-                      </div>
-                    )}
-                  </div>
-                  <RadioGroup
-                    id="subdivision"
-                    value={subdivision}
-                    onValueChange={(value) => setSubdivision(value as "1" | "1/2" | "1/3" | "1/4")}
-                    className="flex justify-between"
-                    disabled={!useClick && !useVoice}
-                  >
-                    <div className="flex items-center space-x-1">
-                      <RadioGroupItem 
-                        value="1" 
-                        id="r1"
-                        disabled={timeSignature === "6/8 (Compound)"}
-                        className="scale-110"
-                      />
-                      <Label 
-                        htmlFor="r1"
-                        className={`text-base cursor-pointer ${
-                          timeSignature === "6/8 (Compound)"
-                            ? "text-gray-400"
-                            : ""
-                        }`}
-                      >
-                        1
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <RadioGroupItem
-                        value="1/2"
-                        id="r2"
-                        disabled={timeSignature === "6/8 (Compound)"}
-                        className="scale-110"
-                      />
-                      <Label
-                        htmlFor="r2"
-                        className={`text-base cursor-pointer ${
-                          timeSignature === "6/8 (Compound)"
-                            ? "text-gray-400"
-                            : ""
-                        }`}
-                      >
-                        1/2
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <RadioGroupItem 
-                        value="1/3" 
-                        id="r3"
-                        disabled={timeSignature === "6/8 (Compound)"}
-                        className="scale-110"
-                      />
-                      <Label 
-                        htmlFor="r3"
-                        className={`text-base cursor-pointer ${
-                          timeSignature === "6/8 (Compound)"
-                            ? "text-gray-400"
-                            : ""
-                        }`}
-                      >
-                        1/3
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <RadioGroupItem
-                        value="1/4"
-                        id="r4"
-                        disabled={timeSignature === "6/8 (Compound)"}
-                        className="scale-110"
-                      />
-                      <Label
-                        htmlFor="r4"
-                        className={`text-base cursor-pointer ${
-                          timeSignature === "6/8 (Compound)"
-                            ? "text-gray-400"
-                            : ""
-                        }`}
-                      >
-                        1/4
-                      </Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-                <div className="flex items-center justify-between py-1">
-                  <Label
-                    htmlFor="voice-subdivision"
-                    className="text-lg font-medium"
-                  >
-                    Voice Subdivision
-                  </Label>
-                  <Switch
-                    id="voice-subdivision"
-                    checked={voiceSubdivision}
-                    onCheckedChange={setVoiceSubdivision}
-                    className="scale-125"
-                  />
-                </div>
-                <div className="flex items-center justify-between py-1">
-                  <Label
-                    htmlFor="flash-app"
-                    className="text-lg font-medium"
-                  >
-                    Flash App
-                  </Label>
-                  <Switch
-                    id="flash-app"
-                    checked={flashApp}
-                    onCheckedChange={setFlashApp}
-                    className="scale-125"
-                  />
-                </div>
+                <RhythmControls
+                  timeSignature={timeSignature}
+                  subdivision={subdivision}
+                  onSubdivisionChange={(val) => setSubdivision(val)}
+                  swingMode={swingMode}
+                  onSwingChange={setSwingMode}
+                  accentFirstBeat={accentFirstBeat}
+                  onAccentChange={setAccentFirstBeat}
+                  voiceSubdivision={voiceSubdivision}
+                  onVoiceSubdivisionChange={setVoiceSubdivision}
+                  flashApp={flashApp}
+                  onFlashAppChange={setFlashApp}
+                  useClick={useClick}
+                  useVoice={useVoice}
+                />
                 <div className="flex items-center justify-between py-1">
                   <Label
                     htmlFor="increasing-tempo"
@@ -1797,287 +1681,70 @@ export default function ClickTrackGenerator() {
                 )}
               </TabsContent>
               <TabsContent value="playlists" className="space-y-3 flex-1 flex flex-col overflow-hidden">
-                <div className="flex justify-between items-center">
-                  <Label className="text-sm font-medium">Saved Presets</Label>
-                  <div className="flex space-x-2">
-                    {/* Update button - only show when a playlist is loaded */}
-                    {currentPlaylistIndex >= 0 && currentPlaylistIndex < playlists.length && (
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={updateCurrentPlaylist}
-                      >
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        Update "{playlists[currentPlaylistIndex].name}"
-                      </Button>
-                    )}
-                    
-                    {/* Save Current button - always available */}
-                    <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" size="sm">
-                          <Save className="mr-2 h-4 w-4" />
-                          Save Current
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Save Current Settings</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <div>
-                            <Label htmlFor="playlist-name">Preset Name</Label>
-                            <Input
-                              id="playlist-name"
-                              value={newPlaylistName}
-                              onChange={(e) => setNewPlaylistName(e.target.value)}
-                              placeholder="Enter preset name..."
-                            />
-                          </div>
-                          <div className="flex justify-end space-x-2">
-                            <Button 
-                              variant="outline" 
-                              onClick={() => setIsSaveDialogOpen(false)}
-                            >
-                              Cancel
-                            </Button>
-                            <Button 
-                              onClick={() => saveCurrentAsPlaylist(newPlaylistName)}
-                              disabled={!newPlaylistName.trim()}
-                            >
-                              Save
-                            </Button>
-                          </div>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                </div>
-                
-                {playlists.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <List className="mx-auto h-12 w-12 mb-4 opacity-50" />
-                    <p>No saved presets yet</p>
-                    <p className="text-sm">Save your current settings to get started</p>
-                  </div>
-                ) : (
-                  <div ref={playlistContainerRef} className="space-y-1 flex-1 overflow-y-auto">
-                    {playlists.map((playlist, index) => (
-                      <div
-                        key={playlist.id}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, index)}
-                        onDragOver={handleDragOver}
-                        onDrop={(e) => handleDrop(e, index)}
-                        onDragEnd={handleDragEnd}
-                        className={`flex items-center gap-2 p-2 border rounded hover:bg-accent transition-all ${
-                          index === currentPlaylistIndex ? 'bg-accent border-primary' : ''
-                        } ${
-                          draggedIndex === index ? 'opacity-50 scale-95' : ''
-                        }`}
-                      >
-                        <div 
-                          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-0.5"
-                          onMouseDown={(e) => e.stopPropagation()}
-                        >
-                          <GripVertical className="h-3 w-3" />
-                        </div>
-                        <div 
-                          className="flex-1 cursor-pointer min-w-0" 
-                          onClick={() => loadPlaylist(playlist, index)}
-                        >
-                          <div className="flex items-center gap-1">
-                            <div className="font-medium text-sm truncate">{playlist.name}</div>
-                            {index === currentPlaylistIndex && (
-                              <Play className="h-3 w-3 text-primary flex-shrink-0" />
-                            )}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {playlist.timeSignature} • {playlist.tempo} BPM
-                            {playlist.isIncreasingTempo && ` • ${playlist.startTempo}-${playlist.endTempo} BPM`}
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deletePlaylist(playlist.id);
-                          }}
-                          className="text-destructive hover:text-destructive h-6 w-6 p-0"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-                {/* Playlist navigation buttons - only show if there are playlists */}
-                {playlists.length > 0 && (
-                  <div className="flex justify-center space-x-2 mt-4">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={skipToPreviousPlaylist}
-                      className="flex-1"
-                      disabled={playlists.length <= 1}
-                    >
-                      <SkipBack className="mr-2 h-4 w-4" />
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={skipToNextPlaylist}
-                      className="flex-1"
-                      disabled={playlists.length <= 1}
-                    >
-                      Next
-                      <SkipForward className="ml-2 h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
-
-
+                <PlaylistPanel
+                  playlists={playlists}
+                  currentIndex={currentPlaylistIndex}
+                  draggedIndex={draggedIndex}
+                  newPlaylistName={newPlaylistName}
+                  setNewPlaylistName={setNewPlaylistName}
+                  isSaveDialogOpen={isSaveDialogOpen}
+                  setIsSaveDialogOpen={setIsSaveDialogOpen}
+                  updateCurrentPlaylist={updateCurrentPlaylist}
+                  saveCurrentAsPlaylist={saveCurrentAsPlaylist}
+                  loadPlaylist={loadPlaylist}
+                  deletePlaylist={deletePlaylist}
+                  handleDragStart={handleDragStart}
+                  handleDragOver={handleDragOver}
+                  handleDrop={handleDrop}
+                  handleDragEnd={handleDragEnd}
+                  skipPrev={skipToPreviousPlaylist}
+                  skipNext={skipToNextPlaylist}
+                  containerRef={playlistContainerRef}
+                />
               </TabsContent>
             </Tabs>
             </div>
 
             <div className="text-center border-t pt-4 bg-white space-y-4">
-              {/* Tempo Slider - visible on all screens */}
-              <div className="px-4">
-                <Label htmlFor="tempo-slider" className="text-lg font-medium block mb-2">
-                  Tempo (BPM)
-                </Label>
-                <Slider
-                  id="tempo-slider"
-                  min={60}
-                  max={200}
-                  step={1}
-                  value={[displayTempo]}
-                  onValueChange={(value) => {
-                    if (!isIncreasingTempo) {
-                      setTempo(value[0]);
-                      setDisplayTempo(value[0]);
-                      setTempoInput(value[0].toString());
-                      tempoRef.current = value[0];
-                    }
-                  }}
-                  className="w-full"
-                  disabled={isIncreasingTempo}
-                />
-              </div>
+              <TransportControls
+                displayTempo={displayTempo}
+                isIncreasingTempo={isIncreasingTempo}
+                onSliderChange={(val) => {
+                  if (!isIncreasingTempo) {
+                    setTempo(val);
+                    setDisplayTempo(val);
+                    setTempoInput(val.toString());
+                    tempoRef.current = val;
+                  }
+                }}
+                onStartAdjust={startBpmAdjustment}
+                onStopAdjust={stopBpmAdjustment}
+                canDec={displayTempo > 60}
+                canInc={displayTempo < 200}
+                isEditing={isEditingMainDisplay}
+                mainDisplayInput={mainDisplayInput}
+                onMainDisplayInputChange={handleMainDisplayInputChange}
+                onMainDisplayBlur={handleMainDisplayBlur}
+                onMainDisplayKeyDown={handleMainDisplayKeyDown}
+                onMainDisplayClick={handleMainDisplayClick}
+                mainDisplayInputRef={mainDisplayInputRef}
+              />
 
+              <VisualBeatIndicator
+                beatsPerMeasure={timeSignature === "6/8 (Compound)" ? 6 : parseInt(timeSignature.split("/")[0])}
+                isCompound={timeSignature === "6/8 (Compound)"}
+                activeBeat={activeBeat}
+                accentFirstBeat={accentFirstBeat}
+              />
 
-              
-              <div className="flex items-center justify-center space-x-6">
-                <Button
-                  variant="outline"
-                  size="lg"
-                  className="h-16 w-16 p-0"
-                  onMouseDown={() => startBpmAdjustment(-1, false)}
-                  onMouseUp={stopBpmAdjustment}
-                  onMouseLeave={stopBpmAdjustment}
-                  onTouchStart={(e) => {
-                    e.preventDefault();
-                    startBpmAdjustment(-1, true);
-                  }}
-                  onTouchEnd={stopBpmAdjustment}
-                  disabled={displayTempo <= 60 || isIncreasingTempo}
-                >
-                  <Minus className="h-8 w-8" />
-                </Button>
-                                 {isEditingMainDisplay ? (
-                   <input
-                     ref={mainDisplayInputRef}
-                     type="text"
-                     inputMode="numeric"
-                     pattern="[0-9]*"
-                     value={mainDisplayInput}
-                     onChange={handleMainDisplayInputChange}
-                     onBlur={handleMainDisplayBlur}
-                     onKeyDown={handleMainDisplayKeyDown}
-                     className="text-6xl font-bold w-32 h-20 text-center bg-transparent border-none outline-none"
-                     disabled={isIncreasingTempo}
-                   />
-                 ) : (
-                   <div 
-                     className={`text-6xl font-bold w-32 h-20 text-center flex items-center justify-center transition-colors ${
-                       isIncreasingTempo 
-                         ? 'cursor-default' 
-                         : 'cursor-pointer hover:bg-gray-100 rounded-lg'
-                     }`}
-                     onClick={handleMainDisplayClick}
-                     title={isIncreasingTempo ? "Cannot edit during increasing tempo mode" : "Click to edit"}
-                   >
-                     {displayTempo}
-                   </div>
-                 )}
-                <Button
-                  variant="outline"
-                  size="lg"
-                  className="h-16 w-16 p-0"
-                  onMouseDown={() => startBpmAdjustment(1, false)}
-                  onMouseUp={stopBpmAdjustment}
-                  onMouseLeave={stopBpmAdjustment}
-                  onTouchStart={(e) => {
-                    e.preventDefault();
-                    startBpmAdjustment(1, true);
-                  }}
-                  onTouchEnd={stopBpmAdjustment}
-                  disabled={displayTempo >= 200 || isIncreasingTempo}
-                >
-                  <Plus className="h-8 w-8" />
-                </Button>
-              </div>
-              
-              <div className="flex justify-center space-x-4 py-4">
-                {renderLights()}
-              </div>
-
-              <div className="flex justify-between space-x-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={`flex-1 ${
-                    useClick
-                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                      : "hover:bg-secondary"
-                  }`}
-                  onClick={() => toggleClickMode(!useClick)}
-                >
-                  <Music className="mr-2 h-4 w-4" />
-                  Click
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={`flex-1 ${
-                    useVoice
-                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                      : "hover:bg-secondary"
-                  }`}
-                  onClick={() => toggleVoiceMode(!useVoice)}
-                >
-                  <Volume2 className="mr-2 h-4 w-4" />
-                  Voice
-                </Button>
-              </div>
-
-              <Button onClick={startStop} className="w-full" size="lg">
-                {isPlaying ? (
-                  <>
-                    <Square className="mr-2 h-4 w-4" />
-                    Stop
-                  </>
-                ) : (
-                  <>
-                    <Play className="mr-2 h-4 w-4" />
-                    Play
-                  </>
-                )}
-              </Button>
+              <PlaybackControls
+                useClick={useClick}
+                useVoice={useVoice}
+                onToggleClick={() => toggleClickMode(!useClick)}
+                onToggleVoice={() => toggleVoiceMode(!useVoice)}
+                isPlaying={isPlaying}
+                onStartStop={startStop}
+              />
             </div>
 
 
