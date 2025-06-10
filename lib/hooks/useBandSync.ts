@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Peer, { DataConnection } from 'peerjs';
+import Peer from 'peerjs';
+import type { DataConnection } from 'peerjs';
 import useAudioEngine from './useAudioEngine';
 
 /** Reconnection backoff timing (ms) */
