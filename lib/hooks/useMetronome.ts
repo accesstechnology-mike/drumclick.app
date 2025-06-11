@@ -118,6 +118,13 @@ export default function useMetronome(config: MetronomeConfig): MetronomeHandle {
   const nextPulseTimeRefs = useRef<number[]>([]);
   const currentPulseBeatRefs = useRef<number[]>([]); // includes sub-beats
 
+  /* Additional refs for polyrhythm mode */
+  const pulsesRef = useRef<PulseConfig[]>(polyrhythm?.pulses ?? []);
+  const anchorIdxRef = useRef<number>(polyrhythm?.anchorIndex ?? 0);
+
+  // Add state for tracking pulse reset
+  const resetPendingRef = useRef(false);
+
   /* ------------------------------------------------------------------ */
   /* Prop → ref syncing                                                 */
   /* ------------------------------------------------------------------ */
@@ -127,6 +134,44 @@ export default function useMetronome(config: MetronomeConfig): MetronomeHandle {
   useEffect(() => { subdivisionRef.current = subdivision; }, [subdivision]);
   useEffect(() => { voiceSubdivisionRef.current = voiceSubdivision; }, [voiceSubdivision]);
   useEffect(() => { swingModeRef.current = swingMode; }, [swingMode]);
+
+  /* ------------------------------------------------------------------ */
+  /* Keep refs in sync with latest props so scheduler sees instant updates */
+  /* ------------------------------------------------------------------ */
+  useEffect(() => {
+    if (polyrhythm) {
+      // Check for changes BEFORE updating refs
+      const beatsKeyPrev = pulsesRef.current.map(p => p.beats).join(',');
+      const beatsKeyNext = polyrhythm.pulses.map(p => p.beats).join(',');
+      
+      const needsReset =
+        nextPulseTimeRefs.current.length !== polyrhythm.pulses.length ||
+        beatsKeyPrev !== beatsKeyNext;
+
+      console.log(`[DEBUG] Polyrhythm update - beatsKeyPrev: ${beatsKeyPrev}, beatsKeyNext: ${beatsKeyNext}, needsReset: ${needsReset}`);
+
+      // Update refs AFTER checking for changes
+      pulsesRef.current = polyrhythm.pulses;
+      anchorIdxRef.current = polyrhythm.anchorIndex;
+
+      if (nextPulseTimeRefs.current.length !== polyrhythm.pulses.length) {
+        nextPulseTimeRefs.current = [];
+        currentPulseBeatRefs.current = [];
+      }
+
+      if (needsReset) {
+        console.log(`[DEBUG] Reset triggered - setting resetPendingRef to true`);
+        // Mark that we need to reset on next anchor downbeat
+        resetPendingRef.current = true;
+        // Immediately stop non-anchor pulses
+        for (let i = 0; i < currentPulseBeatRefs.current.length; i++) {
+          if (i !== anchorIdxRef.current) {
+            nextPulseTimeRefs.current[i] = Infinity; // effectively pauses
+          }
+        }
+      }
+    }
+  }, [polyrhythm]);
 
   /* ------------------------------------------------------------------ */
   /* Helper – current tempo when ramping                                */
@@ -194,9 +239,9 @@ export default function useMetronome(config: MetronomeConfig): MetronomeHandle {
     const now = audioContextRef.current.currentTime;
 
     /* ---------------------------- POLY MODE ------------------------- */
-    if (polyrhythm) {
-      const { pulses, anchorIndex } = polyrhythm;
-      if (pulses.length === 0) return;
+    if (pulsesRef.current.length) {
+      const pulses = pulsesRef.current;
+      const anchorIndex = anchorIdxRef.current;
 
       // Ensure refs are initialised
       if (nextPulseTimeRefs.current.length === 0) {
@@ -213,6 +258,11 @@ export default function useMetronome(config: MetronomeConfig): MetronomeHandle {
         const beatDurAnchor = 60 / currTempo;
 
         pulses.forEach((pulse, idx) => {
+          // If not anchor and reset pending, skip this pulse entirely
+          if (idx !== anchorIndex && resetPendingRef.current) {
+            return;
+          }
+
           const subCount = 1; // subdivisions disabled in poly mode
 
           // Calculate timing for this pulse relative to anchor.
@@ -230,6 +280,20 @@ export default function useMetronome(config: MetronomeConfig): MetronomeHandle {
             const isAccented = beatInCycle === 0 && (pulse.accentFirstBeat ?? accentFirstBeatRef.current);
 
             const schedTime = nextPulseTimeRefs.current[idx];
+
+            // If this is anchor pulse and we're about to play beat 1, restart other pulses
+            if (idx === anchorIndex && beatInCycle === 0 && resetPendingRef.current) {
+              console.log(`[DEBUG] Anchor beat 1 detected, restarting other pulses at time ${schedTime}`);
+              resetPendingRef.current = false;
+              // Restart all non-anchor pulses at this exact time (beat 1)
+              for (let i = 0; i < pulses.length; i++) {
+                if (i !== anchorIndex) {
+                  console.log(`[DEBUG] Restarting pulse ${i} at beat 0, time ${schedTime}`);
+                  currentPulseBeatRefs.current[i] = 0;
+                  nextPulseTimeRefs.current[i] = schedTime;
+                }
+              }
+            }
 
             /* Click */
             if (pulse.useClick) {
@@ -320,7 +384,6 @@ export default function useMetronome(config: MetronomeConfig): MetronomeHandle {
     accentFirstBeatRef,
     subdivisionRef,
     audioContextRef,
-    polyrhythm,
   ]);
 
   /* ------------------------------------------------------------------ */
