@@ -11,7 +11,7 @@ import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Minus } from "lucide-react";
+import { Plus, Minus, Loader2 } from "lucide-react";
 import AudioWakeLock from "./AudioWakeLock";
 import VisualBeatIndicator from "./VisualBeatIndicator";
 import useAudioEngine from "@/lib/hooks/useAudioEngine";
@@ -19,6 +19,7 @@ import PlaybackControls from "./PlaybackControls";
 import TransportControls from "./TransportControls";
 import RhythmControls from "./RhythmControls";
 import PlaylistPanel from "./PlaylistPanel";
+import useBandSync, { SyncRole } from '@/lib/hooks/useBandSync';
 
 interface WindowWithWebkitAudioContext extends Window {
   webkitAudioContext?: typeof AudioContext;
@@ -123,6 +124,47 @@ export default function ClickTrackGenerator() {
   const [appFlashing, setAppFlashing] = useState(false);
   const [flashColor, setFlashColor] = useState<'yellow' | 'green'>('green');
   const [showLogo, setShowLogo] = useState(true);
+
+  /* ------------------------------------------------------------------ */
+  /* Real-time band sync                                                */
+  /* ------------------------------------------------------------------ */
+  const [syncRole, setSyncRole] = useState<SyncRole>('leader');
+  const [joinCode, setJoinCode] = useState('');
+  const bandSync = useBandSync(syncRole);
+
+  // Register to band-sync start/stop callbacks once.
+  useEffect(() => {
+    bandSync.onStart(({ startAudioTime, tempo: hostTempo, signature }) => {
+      if (syncRole === 'member') {
+        // Adopt host params
+        setTempo(hostTempo);
+        setTimeSignature(signature);
+
+        // Translate host time to local AudioContext time.
+        const localStartTime = bandSync.convertHostTime(startAudioTime);
+
+        // Ensure AudioContext exists
+        if (!audioContextRef.current) {
+          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+          audioContextRef.current = new AudioCtx();
+        }
+        const now = audioContextRef.current!.currentTime;
+        const delayMs = Math.max(0, (localStartTime - now) * 1000);
+        // Start playback after computed delay
+        setTimeout(() => {
+          if (!isPlaying) {
+            startStop();
+          }
+        }, delayMs);
+      }
+    });
+
+    bandSync.onStop(() => {
+      if (isPlaying) {
+        startStop(); // toggles to stop
+      }
+    });
+  }, [bandSync, syncRole, isPlaying]);
 
   // Flash trigger function
   const triggerAppFlash = useCallback((isAccented: boolean = false) => {
@@ -782,12 +824,18 @@ export default function ClickTrackGenerator() {
           }
           setIsPlaying(true); // Set playing state *after* setup
           
+          // If acting as band leader and sync is ready, broadcast start to members
+          if (syncRole === 'leader' && bandSync.ready) {
+            // We assume our playback starts ~0.1s after resume above
+            const startDelay = 0.1;
+            bandSync.startTransport(startDelay, tempoRef.current, timeSignatureRef.current);
+          }
       }).catch(e => {
         console.error('Failed to resume AudioContext:', e);
         setIsPlaying(false); 
       });
     }
-  }, [isPlaying, stopWebAudioWakeLock, createWebAudioWakeLock, loadAudioFiles, scheduleClick, scheduleCompound68, timeSignature, isIncreasingTempo, startTempo, tempo]);
+  }, [isPlaying, stopWebAudioWakeLock, createWebAudioWakeLock, loadAudioFiles, scheduleClick, scheduleCompound68, timeSignature, isIncreasingTempo, startTempo, tempo, syncRole, bandSync]);
 
   useEffect(() => {
     const prevTimeSignature = timeSignatureRef.current;
@@ -1282,8 +1330,6 @@ export default function ClickTrackGenerator() {
     }
   }, [displayTempo, isEditingMainDisplay]);
 
-
-
   // Modify the visibilitychange handler - primarily for resuming context if needed
   useEffect(() => {
     const handleVisibilityChange = async () => {
@@ -1487,6 +1533,88 @@ export default function ClickTrackGenerator() {
                   useClick={useClick}
                   useVoice={useVoice}
                 />
+                <div className="space-y-2 bg-gray-50 p-3 rounded-lg">
+                  <Label className="text-lg font-medium block mb-1">Band Sync</Label>
+                  <div className="flex items-center space-x-4">
+                    <RadioGroup
+                      value={syncRole}
+                      onValueChange={(val) => setSyncRole(val as SyncRole)}
+                      className="flex space-x-4"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="leader" id="role-leader" />
+                        <Label htmlFor="role-leader">Leader</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="member" id="role-member" />
+                        <Label htmlFor="role-member">Member</Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  {syncRole === 'leader' ? (
+                    <div className="mt-2">
+                      {bandSync.ready && bandSync.sessionId ? (
+                        <div className="text-sm">
+                          Share this code with your band:&nbsp;
+                          <span className="font-mono px-2 py-1 bg-white rounded border">
+                            {bandSync.sessionId}
+                          </span>
+                        </div>
+                      ) : (
+                        <Button size="sm" onClick={() => bandSync.startHosting()}>
+                          Generate Code
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {bandSync.status === 'connected' ? (
+                        <div className="text-sm text-green-600">Connected</div>
+                      ) : bandSync.status === 'connecting' ? (
+                        <div className="flex items-center space-x-2 text-sm text-blue-600">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Connecting…</span>
+                        </div>
+                      ) : bandSync.status === 'reconnecting' ? (
+                        <div className="flex items-center space-x-2 text-sm text-orange-600">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Reconnecting…</span>
+                        </div>
+                      ) : bandSync.status === 'error' ? (
+                        <div className="text-sm text-red-600">Disconnected. Retrying in {Math.ceil(bandSync.retryInMs / 1000)}s…</div>
+                      ) : null}
+                      {bandSync.status === 'connected' && (
+                        <div className="text-xs flex items-center space-x-1">
+                          <span
+                            className={`inline-block h-2 w-2 rounded-full ${bandSync.quality === 'excellent' ? 'bg-green-500' : bandSync.quality === 'good' ? 'bg-yellow-400' : bandSync.quality === 'fair' ? 'bg-orange-400' : 'bg-red-500'}`}
+                            title={`Jitter: ${bandSync.longTermJitterMs.toFixed(1)} ms`}
+                          />
+                          <span className="text-gray-600">{bandSync.quality}</span>
+                          <span className="text-gray-400">({bandSync.jitterMs.toFixed(1)} ms)</span>
+                          {/* Health chip */}
+                          <span className={`ml-2 px-1 rounded text-white text-[10px] ${bandSync.health === 'healthy' ? 'bg-green-600' : bandSync.health === 'degraded' ? 'bg-yellow-600' : 'bg-red-600'}`}>{bandSync.health}</span>
+                        </div>
+                      )}
+                      <div className="flex space-x-2">
+                        <Input
+                          placeholder="Enter code"
+                          value={joinCode}
+                          onChange={(e) => setJoinCode(e.target.value)}
+                          className="flex-1"
+                          disabled={bandSync.status === 'connecting'}
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => bandSync.joinSession(joinCode.trim())}
+                          disabled={!joinCode.trim() || bandSync.status === 'connecting'}
+                        >
+                          Join
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className="flex items-center justify-between py-1">
                   <Label
                     htmlFor="increasing-tempo"
