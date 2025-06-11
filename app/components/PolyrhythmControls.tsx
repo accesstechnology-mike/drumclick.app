@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
-import { Plus, Minus } from 'lucide-react';
+import { Plus, Minus, Music, Volume2 } from 'lucide-react';
 import { PulseConfig } from '@/lib/hooks/useMetronome';
 
 interface PolyrhythmControlsProps {
@@ -45,14 +45,14 @@ export default function PolyrhythmControls({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       {/* Two-column grid */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-2">
         {pulses.map((p, idx) => {
           const colId = `${id}-${idx}`;
           const isAnchor = idx === anchorIndex;
           return (
-            <div key={idx} className="border rounded-lg p-3 space-y-3">
+            <div key={idx} className="border rounded-lg p-2 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-lg font-semibold flex items-center space-x-1">
                   <span>{idx === 0 ? 'Pulse 1' : 'Pulse 2'}</span>
@@ -83,26 +83,30 @@ export default function PolyrhythmControls({
                 </Button>
               </div>
 
-              {/* Click & Voice toggles */}
-              <div className="flex items-center justify-between">
-                <Label htmlFor={`${colId}-click`} className="text-sm">
+              {/* Click & Voice toggles (matching main app style) */}
+              <div className="flex justify-between space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={`flex-1 ${
+                    p.useClick ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'hover:bg-secondary'
+                  }`}
+                  onClick={() => handleToggle(idx, 'useClick')}
+                >
+                  <Music className="mr-1 h-3 w-3" />
                   Click
-                </Label>
-                <Switch
-                  id={`${colId}-click`}
-                  checked={p.useClick}
-                  onCheckedChange={() => handleToggle(idx, 'useClick')}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor={`${colId}-voice`} className="text-sm">
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={`flex-1 ${
+                    p.useVoice ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'hover:bg-secondary'
+                  }`}
+                  onClick={() => handleToggle(idx, 'useVoice')}
+                >
+                  <Volume2 className="mr-1 h-3 w-3" />
                   Voice
-                </Label>
-                <Switch
-                  id={`${colId}-voice`}
-                  checked={p.useVoice}
-                  onCheckedChange={() => handleToggle(idx, 'useVoice')}
-                />
+                </Button>
               </div>
 
               {/* Pan slider */}
