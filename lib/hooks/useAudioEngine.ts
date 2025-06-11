@@ -104,20 +104,30 @@ export default function useAudioEngine() {
       {
         volume = 1,
         duration = 0.1,
-      }: { volume?: number; duration?: number } = {},
+        pan = 0,
+      }: { volume?: number; duration?: number; pan?: number } = {},
     ) => {
       const ctx = getOrCreateContext();
 
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+      const panner = ctx.createStereoPanner();
 
+      // Routing: osc → gain → panner (→ destination)
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(panner);
+      panner.connect(ctx.destination);
 
+      // Apply params
       osc.frequency.setValueAtTime(frequency, time);
       gain.gain.setValueAtTime(0, time);
       gain.gain.linearRampToValueAtTime(volume, time + 0.005);
       gain.gain.exponentialRampToValueAtTime(0.00001, time + duration);
+
+      if (pan !== 0) {
+        // Clamp to range just in case
+        panner.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), time);
+      }
 
       osc.start(time);
       osc.stop(time + duration);
@@ -129,18 +139,30 @@ export default function useAudioEngine() {
    * Play a pre-loaded audio buffer (by index) at the given time.
    */
   const playBuffer = useCallback(
-    (time: number, index: number, volume = 1) => {
+    (
+      time: number,
+      index: number,
+      volume = 1,
+      pan: number = 0,
+    ) => {
       const ctx = getOrCreateContext();
       const buffer = audioBuffersRef.current[index];
       if (!buffer) return;
 
       const src = ctx.createBufferSource();
       const gain = ctx.createGain();
+      const panner = ctx.createStereoPanner();
+
       src.buffer = buffer;
       gain.gain.setValueAtTime(volume, time);
+      if (pan !== 0) {
+        panner.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), time);
+      }
 
+      // Routing: src → gain → panner → destination
       src.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(panner);
+      panner.connect(ctx.destination);
 
       src.start(time);
     },

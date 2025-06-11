@@ -5,6 +5,28 @@ import useAudioEngine from '@/lib/hooks/useAudioEngine';
 
 export type Subdivision = '1' | '1/2' | '1/3' | '1/4';
 
+export interface PulseConfig {
+  /** Number of beats in the pulse for the full cycle (e.g. 3 if ratio is 3:2) */
+  beats: number;
+  /** Whether the pulse should emit click sounds */
+  useClick: boolean;
+  /** Whether the pulse should emit spoken counts */
+  useVoice: boolean;
+  /** Optional per-pulse subdivision (defaults to global) */
+  subdivision?: Subdivision;
+  /** Accent first beat of the pulse */
+  accentFirstBeat?: boolean;
+  /** Pan position for all audio material for this pulse (-1 = left, 1 = right) */
+  pan?: number;
+}
+
+export interface PolyrhythmOptions {
+  /** Two (or more) pulses that will run concurrently */
+  pulses: PulseConfig[];
+  /** Index in `pulses` that acts as the anchor (its BPM = `tempo` prop) */
+  anchorIndex: number;
+}
+
 export interface MetronomeConfig {
   timeSignature: string;              // e.g. "4/4", "3/4", "6/8 (Compound)"
   tempo: number;                      // anchor BPM (integer)
@@ -22,6 +44,7 @@ export interface MetronomeConfig {
   // Callbacks so consuming component can react to beats / tempo updates
   onActiveBeat?: (beatIndex: number) => void;
   onTempoUpdate?: (currentTempo: number) => void;
+  polyrhythm?: PolyrhythmOptions;
 }
 
 export interface MetronomeHandle {
@@ -53,6 +76,7 @@ export default function useMetronome(config: MetronomeConfig): MetronomeHandle {
     duration = 5,
     onActiveBeat,
     onTempoUpdate,
+    polyrhythm,
   } = config;
 
   /* ------------------------------------------------------------------ */
@@ -89,6 +113,10 @@ export default function useMetronome(config: MetronomeConfig): MetronomeHandle {
   const subdivisionRef = useRef<Subdivision>(subdivision);
   const voiceSubdivisionRef = useRef(voiceSubdivision);
   const swingModeRef = useRef(swingMode);
+
+  /* Additional refs for polyrhythm mode */
+  const nextPulseTimeRefs = useRef<number[]>([]);
+  const currentPulseBeatRefs = useRef<number[]>([]); // includes sub-beats
 
   /* ------------------------------------------------------------------ */
   /* Prop → ref syncing                                                 */
@@ -158,12 +186,88 @@ export default function useMetronome(config: MetronomeConfig): MetronomeHandle {
   }, [useVoice, playBuffer]);
 
   /* ------------------------------------------------------------------ */
-  /* Core scheduler (4/4 style)                                         */
+  /* Core scheduler (single or poly)                                    */
   /* ------------------------------------------------------------------ */
   const schedule = useCallback(() => {
     if (!audioContextRef.current) return;
 
     const now = audioContextRef.current.currentTime;
+
+    /* ---------------------------- POLY MODE ------------------------- */
+    if (polyrhythm) {
+      const { pulses, anchorIndex } = polyrhythm;
+      if (pulses.length === 0) return;
+
+      // Ensure refs are initialised
+      if (nextPulseTimeRefs.current.length === 0) {
+        nextPulseTimeRefs.current = pulses.map(() => nextNoteTimeRef.current);
+        currentPulseBeatRefs.current = pulses.map(() => 0);
+      }
+
+      while (
+        Math.min(...nextPulseTimeRefs.current) < now + 0.1 /* ahead time */
+      ) {
+        const currTempo = calculateCurrentTempo();
+
+        const anchorBeats = pulses[anchorIndex].beats;
+        const beatDurAnchor = 60 / currTempo;
+
+        pulses.forEach((pulse, idx) => {
+          const subCount = 1; // subdivisions disabled in poly mode
+
+          // Calculate timing for this pulse relative to anchor.
+          const beatDur =
+            idx === anchorIndex
+              ? beatDurAnchor
+              : (beatDurAnchor * anchorBeats) / pulse.beats;
+          const subDur = beatDur / subCount;
+
+          while (nextPulseTimeRefs.current[idx] < now + 0.1) {
+            const pulseBeatCount = currentPulseBeatRefs.current[idx];
+            const subBeat = 0; // since subCount is 1
+            const beatInPulseAbsolute = Math.floor(pulseBeatCount / subCount);
+            const beatInCycle = beatInPulseAbsolute % pulse.beats;
+            const isAccented = beatInCycle === 0 && (pulse.accentFirstBeat ?? accentFirstBeatRef.current);
+
+            const schedTime = nextPulseTimeRefs.current[idx];
+
+            /* Click */
+            if (pulse.useClick) {
+              let freq: number;
+              if (isAccented) freq = idx === anchorIndex ? 1000 : 900;
+              else freq = idx === anchorIndex ? 600 : 500;
+              playTone(schedTime, freq, { volume: 1, pan: pulse.pan ?? 0 });
+            }
+
+            /* Voice counting (only on subBeat 0) */
+            if (pulse.useVoice) {
+              if (beatInCycle < 7) {
+                playBuffer(schedTime, beatInCycle, 1, pulse.pan ?? 0);
+              }
+            }
+
+            /* Anchor-specific callbacks */
+            if (
+              idx === anchorIndex &&
+              onActiveBeat &&
+              now - lastUiUpdateRef.current >= 1 / 60
+            ) {
+              onActiveBeat(beatInCycle);
+              lastUiUpdateRef.current = now;
+            }
+
+            // Increment counters
+            currentPulseBeatRefs.current[idx] += 1;
+            nextPulseTimeRefs.current[idx] += subDur;
+          }
+        });
+      }
+
+      schedulerIdRef.current = requestAnimationFrame(schedule);
+      return;
+    }
+
+    /* --------------------------- SINGLE MODE ------------------------ */
     const [beatsPerMeasure] = timeSignatureRef.current.split('/').map(Number);
 
     const subCount = subdivisionRef.current === '1' ? 1
@@ -204,7 +308,20 @@ export default function useMetronome(config: MetronomeConfig): MetronomeHandle {
     }
 
     schedulerIdRef.current = requestAnimationFrame(schedule);
-  }, [calculateCurrentTempo, createClickSound, createSubdivisionClick, playBeatVoice, playSubdivisionVoice, useClick, useVoice, onActiveBeat, accentFirstBeatRef, subdivisionRef, audioContextRef]);
+  }, [
+    calculateCurrentTempo,
+    createClickSound,
+    createSubdivisionClick,
+    playBeatVoice,
+    playSubdivisionVoice,
+    useClick,
+    useVoice,
+    onActiveBeat,
+    accentFirstBeatRef,
+    subdivisionRef,
+    audioContextRef,
+    polyrhythm,
+  ]);
 
   /* ------------------------------------------------------------------ */
   /* Transport controls                                                 */
@@ -219,6 +336,10 @@ export default function useMetronome(config: MetronomeConfig): MetronomeHandle {
     currentBeatRef.current = 0;
     nextNoteTimeRef.current = audioContextRef.current!.currentTime + 0.05; // small delay
     startTimeRef.current = audioContextRef.current!.currentTime;
+
+    // Reset poly refs too
+    nextPulseTimeRefs.current = [];
+    currentPulseBeatRefs.current = [];
 
     setIsPlaying(true);
     schedulerIdRef.current = requestAnimationFrame(schedule);
