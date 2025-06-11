@@ -99,11 +99,12 @@ export default function useBandSync(role: SyncRole) {
   /* ------------------------------------------------------------------ */
   const createPeer = useCallback((id?: string) => {
     peerRef.current?.destroy();
-    peerRef.current = new Peer(id, {
+    const options = {
       // PeerJS offers a free cloud signalling server at 0.peerjs.com.
       // For production you should self-host.
       debug: 2,
-    });
+    };
+    peerRef.current = id ? new Peer(id, options) : new Peer(options);
     peerRef.current.on('error', (err: any) => {
       console.error('[BandSync] peer error', err);
       setStatus('error');
