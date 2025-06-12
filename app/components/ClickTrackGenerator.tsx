@@ -15,10 +15,13 @@ import { Plus, Minus } from "lucide-react";
 import AudioWakeLock from "./AudioWakeLock";
 import VisualBeatIndicator from "./VisualBeatIndicator";
 import useAudioEngine from "@/lib/hooks/useAudioEngine";
+import useMetronome from "@/lib/hooks/useMetronome";
 import PlaybackControls from "./PlaybackControls";
 import TransportControls from "./TransportControls";
 import RhythmControls from "./RhythmControls";
 import PlaylistPanel from "./PlaylistPanel";
+import PolyrhythmControls from "./PolyrhythmControls";
+import { PulseConfig } from "@/lib/hooks/useMetronome";
 
 interface WindowWithWebkitAudioContext extends Window {
   webkitAudioContext?: typeof AudioContext;
@@ -42,25 +45,19 @@ interface PlaylistItem {
   duration: number;
   flashApp: boolean;
   createdAt: string;
+  mode: 'standard' | 'polyrhythm';
+  polyrhythm?: {
+    pulses: PulseConfig[];
+    anchorIndex: number;
+  };
 }
 
 export default function ClickTrackGenerator() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [timeSignature, setTimeSignature] = useState("4/4");
   const [tempo, setTempo] = useState(120);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [activeBeat, setActiveBeat] = useState(-1);
   const [accentFirstBeat, setAccentFirstBeat] = useState(true);
-  const nextBeatTimeRef = useRef(0);
-  // Audio engine (shared Web-Audio context & helpers)
-  const { audioContextRef, audioBuffersRef, loadAudioFiles } = useAudioEngine();
-  const schedulerIdRef = useRef<number | null>(null);
-  const nextNoteTimeRef = useRef(0);
-  const currentBeatRef = useRef(0);
-  const tempoRef = useRef(tempo);
-  const timeSignatureRef = useRef(timeSignature);
-  const lastUpdateTimeRef = useRef(0);
-  const accentFirstBeatRef = useRef(accentFirstBeat);
   const [tempoInput, setTempoInput] = useState(tempo.toString());
   const [useClick, setUseClick] = useState(true);
   const [useVoice, setUseVoice] = useState(false);
@@ -111,6 +108,10 @@ export default function ClickTrackGenerator() {
   const [mainDisplayInput, setMainDisplayInput] = useState(tempo.toString());
   const mainDisplayInputRef = useRef<HTMLInputElement>(null);
 
+  // Legacy refs for background audio (still needed for wake lock)
+  const wakeLockSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const wakeLockGainRef = useRef<GainNode | null>(null);
+
   // Playlist state
   const [playlists, setPlaylists] = useState<PlaylistItem[]>([]);
   const [newPlaylistName, setNewPlaylistName] = useState("");
@@ -123,6 +124,54 @@ export default function ClickTrackGenerator() {
   const [appFlashing, setAppFlashing] = useState(false);
   const [flashColor, setFlashColor] = useState<'yellow' | 'green'>('green');
   const [showLogo, setShowLogo] = useState(true);
+
+  // Polyrhythm mode state
+  const [mode, setMode] = useState<'standard' | 'polyrhythm'>('standard');
+  const [pulses, setPulses] = useState<PulseConfig[]>([
+    {
+      beats: 3,
+      useClick: true,
+      useVoice: false,
+      subdivision: '1',
+      accentFirstBeat: true,
+      pan: -0.8,
+    },
+    {
+      beats: 2,
+      useClick: true,
+      useVoice: false,
+      subdivision: '1',
+      accentFirstBeat: false,
+      pan: 0.8,
+    },
+  ]);
+  const anchorIndex = 0;
+
+  // Metronome hook (replaces old scheduling logic)
+  const metronome = useMetronome({
+    timeSignature,
+    tempo,
+    accentFirstBeat,
+    subdivision,
+    voiceSubdivision,
+    swingMode,
+    useClick,
+    useVoice,
+    isIncreasingTempo,
+    startTempo,
+    endTempo,
+    duration,
+    onActiveBeat: setActiveBeat,
+    onTempoUpdate: (currentTempo) => {
+      setCurrentTempo(currentTempo);
+      setDisplayTempo(currentTempo);
+    },
+    polyrhythm: mode === 'polyrhythm' ? { pulses, anchorIndex } : undefined,
+  });
+
+  // Simple alias for compatibility
+  const isPlaying = metronome.isPlaying;
+  const startStop = metronome.toggle;
 
   // Flash trigger function
   const triggerAppFlash = useCallback((isAccented: boolean = false) => {
@@ -154,118 +203,7 @@ export default function ClickTrackGenerator() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const createClickSound = useCallback((time: number, frequency: number) => {
-    if (!audioContextRef.current) return;
 
-    const osc = audioContextRef.current.createOscillator();
-    const gainNode = audioContextRef.current.createGain();
-
-    osc.connect(gainNode);
-    gainNode.connect(audioContextRef.current.destination);
-
-    osc.frequency.setValueAtTime(frequency, time);
-    gainNode.gain.setValueAtTime(0, time);
-    gainNode.gain.linearRampToValueAtTime(1.0, time + 0.005); // MAX volume for main clicks
-    gainNode.gain.exponentialRampToValueAtTime(0.00001, time + 0.1);
-
-    osc.start(time);
-    osc.stop(time + 0.1);
-  }, [audioContextRef]);
-
-  const playVoice = useCallback((time: number, number: number) => {
-    if (!audioContextRef.current || !audioBuffersRef.current[number]) {
-      console.warn(`Audio buffer not available for number ${number + 1}`);
-      return;
-    }
-
-    const source = audioContextRef.current.createBufferSource();
-    const gainNode = audioContextRef.current.createGain();
-
-    source.buffer = audioBuffersRef.current[number];
-
-    // Set the gain to MAX volume for main voice samples
-    gainNode.gain.setValueAtTime(1.0, time);
-
-    source.connect(gainNode);
-    gainNode.connect(audioContextRef.current.destination);
-
-    source.start(time);
-  }, [audioContextRef, audioBuffersRef]);
-
-  const createSubdivisionClick = useCallback(
-    (time: number, subBeat: number, subCount: number, isAccented: boolean) => {
-      if (!audioContextRef.current) return;
-
-      // Skip middle beat in swing mode for triplets
-      if (subCount === 3 && swingModeRef.current && subBeat === 1) {
-        return; // Skip the middle beat (beat 2 of triplet)
-      }
-
-      let frequency: number;
-      if (subBeat === 0) {
-        frequency = isAccented ? 1000 : 600; // Main beat
-      } else if (subCount === 2) {
-        frequency = 400; // Half note
-      } else if (subCount === 3) {
-        frequency = subBeat === 1 ? 500 : 400; // Triplet
-      } else if (subCount === 4) {
-        frequency = subBeat === 2 ? 500 : 400; // Quarter note
-      } else {
-        return; // No subdivision
-      }
-
-      const osc = audioContextRef.current.createOscillator();
-      const gainNode = audioContextRef.current.createGain();
-
-      osc.connect(gainNode);
-      gainNode.connect(audioContextRef.current.destination);
-
-      osc.frequency.setValueAtTime(frequency, time);
-      gainNode.gain.setValueAtTime(0, time);
-      gainNode.gain.linearRampToValueAtTime(0.6, time + 0.005); // 60% volume for subdivisions
-      gainNode.gain.exponentialRampToValueAtTime(0.00001, time + 0.1);
-
-      osc.start(time);
-      osc.stop(time + 0.1);
-    },
-    [audioContextRef, swingModeRef]
-  );
-
-  const playSubdivision = useCallback(
-    (time: number, subBeat: number, subCount: number) => {
-      if (!audioContextRef.current) return;
-
-      // Skip middle beat in swing mode for triplets
-      if (subCount === 3 && swingModeRef.current && subBeat === 1) {
-        return; // Skip the middle beat (beat 2 of triplet)
-      }
-
-      let sampleIndex: number;
-      if (subCount === 2) {
-        sampleIndex = 8; // "and"
-      } else if (subCount === 3) {
-        sampleIndex = subBeat === 1 ? 7 : 9; // "eee" or "ah"
-      } else if (subCount === 4) {
-        sampleIndex = subBeat === 1 ? 7 : subBeat === 2 ? 8 : 9; // "eee", "and", or "ah"
-      } else {
-        return; // No subdivision
-      }
-
-      if (audioBuffersRef.current[sampleIndex]) {
-        const source = audioContextRef.current.createBufferSource();
-        const gainNode = audioContextRef.current.createGain();
-
-        source.buffer = audioBuffersRef.current[sampleIndex];
-        gainNode.gain.setValueAtTime(0.6, time); // 60% volume for subdivision voice samples
-
-        source.connect(gainNode);
-        gainNode.connect(audioContextRef.current.destination);
-
-        source.start(time);
-      }
-    },
-    [audioContextRef, audioBuffersRef, swingModeRef]
-  );
 
   // Playlist management functions
   const loadPlaylists = useCallback(() => {
@@ -302,9 +240,11 @@ export default function ClickTrackGenerator() {
       startTempo,
       endTempo,
       duration,
-      flashApp
+      flashApp,
+      mode,
+      polyrhythm: mode === 'polyrhythm' ? { pulses, anchorIndex } : undefined,
     };
-  }, [timeSignature, tempo, accentFirstBeat, subdivision, voiceSubdivision, swingMode, useClick, useVoice, isIncreasingTempo, startTempo, endTempo, duration, flashApp]);
+  }, [timeSignature, tempo, accentFirstBeat, subdivision, voiceSubdivision, swingMode, useClick, useVoice, isIncreasingTempo, startTempo, endTempo, duration, flashApp, mode, pulses, anchorIndex]);
 
   const saveCurrentAsPlaylist = useCallback((name: string) => {
     if (!isHydrated) return;
@@ -336,21 +276,14 @@ export default function ClickTrackGenerator() {
   }, [currentPlaylistIndex, playlists, getCurrentSettings, savePlaylists]);
 
   const loadPlaylist = useCallback((playlist: PlaylistItem, index?: number) => {
-    // Load all settings immediately - don't stop playback, let the useEffects handle the transitions
+    // Load all settings immediately - the metronome hook will handle transitions
     setTimeSignature(playlist.timeSignature);
     setTempo(playlist.tempo);
     setDisplayTempo(playlist.tempo);
-    setTempoInput(playlist.tempo.toString());
-    tempoRef.current = playlist.tempo;
-    timeSignatureRef.current = playlist.timeSignature;
     setAccentFirstBeat(playlist.accentFirstBeat);
-    accentFirstBeatRef.current = playlist.accentFirstBeat;
     setSubdivision(playlist.subdivision);
-    subdivisionRef.current = playlist.subdivision;
     setVoiceSubdivision(playlist.voiceSubdivision);
-    voiceSubdivisionRef.current = playlist.voiceSubdivision;
     setSwingMode(playlist.swingMode || false);
-    swingModeRef.current = playlist.swingMode || false;
     setUseClick(playlist.useClick);
     setUseVoice(playlist.useVoice);
     setIsIncreasingTempo(playlist.isIncreasingTempo);
@@ -359,12 +292,10 @@ export default function ClickTrackGenerator() {
     setDuration(playlist.duration);
     setFlashApp(playlist.flashApp || false);
     
-    // Reset start time for increasing tempo when switching playlists
-    if (playlist.isIncreasingTempo && audioContextRef.current) {
-      startTimeRef.current = audioContextRef.current.currentTime;
-      // Also set the current tempo to the start tempo for immediate display
-      setCurrentTempo(playlist.startTempo);
-      tempoRef.current = playlist.startTempo;
+    // Load mode and polyrhythm settings
+    setMode(playlist.mode || 'standard'); // Default to standard for old playlists
+    if (playlist.mode === 'polyrhythm' && playlist.polyrhythm) {
+      setPulses(playlist.polyrhythm.pulses);
     }
     
     // Update current playlist index
@@ -377,12 +308,7 @@ export default function ClickTrackGenerator() {
     }
     
     setIsPlaylistDialogOpen(false);
-
-    // If voice is enabled and audio buffers aren't loaded, load them
-    if (playlist.useVoice && audioBuffersRef.current.length === 0 && audioContextRef.current) {
-      loadAudioFiles();
-    }
-  }, [loadAudioFiles, playlists]);
+  }, [playlists]);
 
   const deletePlaylist = useCallback((id: string) => {
     const newPlaylists = playlists.filter(p => p.id !== id);
@@ -1448,27 +1374,54 @@ export default function ClickTrackGenerator() {
                   </div>
                 )}
 
+                {/* Mode Selector */}
                 <div>
-                  <Label htmlFor="timeSignature" className="text-lg font-medium text-center block">
-                    Time Signature
+                  <Label htmlFor="mode" className="text-lg font-medium text-center block">
+                    Mode
                   </Label>
-                  <Select value={timeSignature} onValueChange={setTimeSignature}>
-                    <SelectTrigger id="timeSignature" className="focus:ring-0 focus:ring-offset-0 h-12 text-lg">
-                      <SelectValue placeholder="Select time signature" />
+                  <Select value={mode} onValueChange={(value: 'standard' | 'polyrhythm') => setMode(value)}>
+                    <SelectTrigger id="mode" className="focus:ring-0 focus:ring-offset-0 h-12 text-lg">
+                      <SelectValue placeholder="Select mode" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="2/4" className="h-12 text-lg">2/4</SelectItem>
-                      <SelectItem value="3/4" className="h-12 text-lg">3/4</SelectItem>
-                      <SelectItem value="4/4" className="h-12 text-lg">4/4</SelectItem>
-                      <SelectItem value="5/4" className="h-12 text-lg">5/4</SelectItem>
-                      <SelectItem value="6/8" className="h-12 text-lg">6/8</SelectItem>
-                      <SelectItem value="6/8 (Compound)" className="h-12 text-lg">
-                        6/8 (Compound)
-                      </SelectItem>
-                      <SelectItem value="7/8" className="h-12 text-lg">7/8</SelectItem>
+                      <SelectItem value="standard" className="h-12 text-lg">Standard</SelectItem>
+                      <SelectItem value="polyrhythm" className="h-12 text-lg">Polyrhythm</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* Conditional rendering based on mode */}
+                {mode === 'standard' ? (
+                  <div>
+                    <Label htmlFor="timeSignature" className="text-lg font-medium text-center block">
+                      Time Signature
+                    </Label>
+                    <Select value={timeSignature} onValueChange={setTimeSignature}>
+                      <SelectTrigger id="timeSignature" className="focus:ring-0 focus:ring-offset-0 h-12 text-lg">
+                        <SelectValue placeholder="Select time signature" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="2/4" className="h-12 text-lg">2/4</SelectItem>
+                        <SelectItem value="3/4" className="h-12 text-lg">3/4</SelectItem>
+                        <SelectItem value="4/4" className="h-12 text-lg">4/4</SelectItem>
+                        <SelectItem value="5/4" className="h-12 text-lg">5/4</SelectItem>
+                        <SelectItem value="6/8" className="h-12 text-lg">6/8</SelectItem>
+                        <SelectItem value="6/8 (Compound)" className="h-12 text-lg">
+                          6/8 (Compound)
+                        </SelectItem>
+                        <SelectItem value="7/8" className="h-12 text-lg">7/8</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <PolyrhythmControls
+                      pulses={pulses}
+                      anchorIndex={anchorIndex}
+                      onPulsesChange={setPulses}
+                    />
+                  </div>
+                )}
 
               </TabsContent>
               <TabsContent value="advanced" className="space-y-4 overflow-y-auto px-2">
@@ -1704,8 +1657,6 @@ export default function ClickTrackGenerator() {
                   if (!isIncreasingTempo) {
                     setTempo(val);
                     setDisplayTempo(val);
-                    setTempoInput(val.toString());
-                    tempoRef.current = val;
                   }
                 }}
                 onStartAdjust={startBpmAdjustment}
@@ -1722,17 +1673,21 @@ export default function ClickTrackGenerator() {
               />
 
               <VisualBeatIndicator
-                beatsPerMeasure={timeSignature === "6/8 (Compound)" ? 6 : parseInt(timeSignature.split("/")[0])}
-                isCompound={timeSignature === "6/8 (Compound)"}
+                beatsPerMeasure={
+                  mode === 'polyrhythm' 
+                    ? pulses[anchorIndex]?.beats || 4 
+                    : timeSignature === "6/8 (Compound)" ? 6 : parseInt(timeSignature.split("/")[0])
+                }
+                isCompound={mode === 'standard' && timeSignature === "6/8 (Compound)"}
                 activeBeat={activeBeat}
-                accentFirstBeat={accentFirstBeat}
+                accentFirstBeat={mode === 'polyrhythm' ? pulses[anchorIndex]?.accentFirstBeat || true : accentFirstBeat}
               />
 
               <PlaybackControls
                 useClick={useClick}
                 useVoice={useVoice}
-                onToggleClick={() => toggleClickMode(!useClick)}
-                onToggleVoice={() => toggleVoiceMode(!useVoice)}
+                onToggleClick={() => setUseClick(!useClick)}
+                onToggleVoice={() => setUseVoice(!useVoice)}
                 isPlaying={isPlaying}
                 onStartStop={startStop}
               />
