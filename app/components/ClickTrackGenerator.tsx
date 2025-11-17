@@ -207,7 +207,7 @@ export default function ClickTrackGenerator() {
 
     osc.frequency.setValueAtTime(frequency, time);
     gainNode.gain.setValueAtTime(0, time);
-    gainNode.gain.linearRampToValueAtTime(1.0, time + 0.005); // MAX volume for main clicks
+    gainNode.gain.linearRampToValueAtTime(2.0, time + 0.005); // Maximum volume for main clicks
     gainNode.gain.exponentialRampToValueAtTime(0.00001, time + 0.1);
 
     osc.start(time);
@@ -225,8 +225,8 @@ export default function ClickTrackGenerator() {
 
     source.buffer = audioBuffersRef.current[number];
 
-    // Set the gain to MAX volume for main voice samples
-    gainNode.gain.setValueAtTime(1.0, time);
+    // Reduced volume for main voice samples
+    gainNode.gain.setValueAtTime(0.4, time);
 
     source.connect(gainNode);
     gainNode.connect(audioContextRef.current.destination);
@@ -264,7 +264,7 @@ export default function ClickTrackGenerator() {
 
       osc.frequency.setValueAtTime(frequency, time);
       gainNode.gain.setValueAtTime(0, time);
-      gainNode.gain.linearRampToValueAtTime(0.6, time + 0.005); // 60% volume for subdivisions
+      gainNode.gain.linearRampToValueAtTime(1.2, time + 0.005); // 60% relative to main clicks (maintains relative level)
       gainNode.gain.exponentialRampToValueAtTime(0.00001, time + 0.1);
 
       osc.start(time);
@@ -298,7 +298,7 @@ export default function ClickTrackGenerator() {
         const gainNode = audioContextRef.current.createGain();
 
         source.buffer = audioBuffersRef.current[sampleIndex];
-        gainNode.gain.setValueAtTime(0.6, time); // 60% volume for subdivision voice samples
+        gainNode.gain.setValueAtTime(0.3, time); // 50% of previous 60% volume for subdivision voice samples
 
         source.connect(gainNode);
         gainNode.connect(audioContextRef.current.destination);
