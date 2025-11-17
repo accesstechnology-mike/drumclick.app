@@ -166,7 +166,7 @@ export default function ClickTrackGenerator() {
 
     osc.frequency.setValueAtTime(frequency, time);
     gainNode.gain.setValueAtTime(0, time);
-    gainNode.gain.linearRampToValueAtTime(2.0, time + 0.005); // Maximum volume for main clicks
+    gainNode.gain.linearRampToValueAtTime(1.0, time + 0.005);
     gainNode.gain.exponentialRampToValueAtTime(0.00001, time + 0.1);
 
     osc.start(time);
@@ -223,7 +223,7 @@ export default function ClickTrackGenerator() {
 
       osc.frequency.setValueAtTime(frequency, time);
       gainNode.gain.setValueAtTime(0, time);
-      gainNode.gain.linearRampToValueAtTime(1.2, time + 0.005); // 60% relative to main clicks (maintains relative level)
+      gainNode.gain.linearRampToValueAtTime(1.0, time + 0.005);
       gainNode.gain.exponentialRampToValueAtTime(0.00001, time + 0.1);
 
       osc.start(time);
