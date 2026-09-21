@@ -5,10 +5,7 @@ const nextConfig = withPWA({
   dest: 'public',
   register: true,
   skipWaiting: true,
-  // Skip next-pwa webpack compilation on Vercel. The committed public/sw.js
-  // is still deployed; this matches the working Next 16 preview path, which
-  // does not run the webpack plugin.
-  disable: Boolean(process.env.VERCEL),
+  disable: false, // Enable PWA in development for testing
   runtimeCaching: [
     {
       urlPattern: /^https?.*/,
