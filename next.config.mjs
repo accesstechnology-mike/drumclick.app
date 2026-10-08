@@ -22,7 +22,8 @@ const nextConfig = withPWA({
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // ... other config options ...
+  // next-pwa adds webpack config; Next 16 requires an explicit turbopack key.
+  turbopack: {},
 });
 
 export default nextConfig;
